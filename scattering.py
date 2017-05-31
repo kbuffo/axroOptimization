@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import pdb
-from PyXFocus.conicsolve import primrad,primfocus,woltparam
+from axroOptimization.conicsolve import primrad,primfocus,woltparam
 import utilities.imaging.man as man
 import scatter
 

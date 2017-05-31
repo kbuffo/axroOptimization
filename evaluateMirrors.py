@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import scattering as scat
 import utilities.imaging.man as man
 import axro.solver as slv
-import PyXFocus.conicsolve as conic
+import axroOptimization.conicsolve as conic
 
 def correctXrayTestMirror(d,ifs,shade=None,dx=None,azweight=.015,smax=5.,\
                           bounds=None):
