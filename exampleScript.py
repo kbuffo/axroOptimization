@@ -3,7 +3,7 @@ import numpy as np
 import astropy.io.fits as pyfits
 
 #Read data
-ifs = pyfits.getdata('/home/rallured/Dropbox/AXRO/InfluenceFunctions/220mmRoC/Conical/4inVlad/170424_4inVlad_IFs.fits')
+ifs = pyfits.getdata('/home/rallured/Dropbox/AXRO/InfluenceFunctions/220mmRoC/Conical/4inVlad/170531_4inVlad_IFs.fits')
 distortion = pyfits.getdata('/home/rallured/GoogleDrive/AXROMetrology/PCO1S08/161108_PCO1S08_CleanedDistortionData.fits')
 
 #Create shademask

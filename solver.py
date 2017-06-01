@@ -243,7 +243,7 @@ def createShadePerimeter(sh,axialFraction=0.,azFraction=0.):
     sh is shape tuple e.g. (200,200)
     """
     arr = np.zeros(sh)
-    axIndex = round(sh[0]*axialFraction/2)
-    azIndex = round(sh[1]*azFraction/2)
+    axIndex = int(round(sh[0]*axialFraction/2))
+    azIndex = int(round(sh[1]*azFraction/2))
     arr[axIndex:-axIndex,azIndex:-azIndex] = 1.
     return arr
