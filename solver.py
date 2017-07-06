@@ -14,7 +14,7 @@ def ampMeritFunction(voltages,distortion,ifuncs):
     Simply compute sum(ifuncs*voltages-distortion)**2)
     """
     #Numpy way
-    r = np.dot(ifuncs,voltages)-distortion
+    #r = np.dot(ifuncs,voltages)-distortion
     res = np.mean((np.dot(ifuncs,voltages)-distortion)**2)
     return res
 
@@ -116,7 +116,7 @@ def prepareDist(d,dx=None,azweight=.015):
         d[0] = d[0] - np.nanmean(d[0])
         d[1] = d[1] - np.nanmean(d[1])
         d[1] = d[1]*azweight
-
+        
     return d.flatten()
 
 def optimizer(distortion,ifs,shade,smin=0.,smax=5.,bounds=None,compare=False):
@@ -135,6 +135,7 @@ def optimizer(distortion,ifs,shade,smin=0.,smax=5.,bounds=None,compare=False):
         shade = pyfits.getdata(shade)
 
     #Remove shademask
+    # NOTE! This is not working correctly with the azimuthal weighting.
     ifs = ifs[shade==1]
     distortion = distortion[shade==1]
 
@@ -147,17 +148,16 @@ def optimizer(distortion,ifs,shade,smin=0.,smax=5.,bounds=None,compare=False):
         #Output arrays as fits to be compared using MATLAB
         return ifs,distortion
     
-
     #Handle bounds
     if bounds is None:
         bounds = []
         for i in range(np.shape(ifs)[1]):
             bounds.append((smin,smax))
-
+            
     #Call optimizer algorithm
     optv = fmin_slsqp(ampMeritFunction,np.zeros(np.shape(ifs)[1]),\
                       bounds=bounds,args=(distortion,ifs),\
-                      iprint=1,fprime=ampMeritDerivative,iter=200,\
+                      iprint=1,fprime=ampMeritDerivative,iter=1000,\
                       acc=1.e-6)
 
     return optv

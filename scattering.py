@@ -5,9 +5,6 @@ from axroOptimization.conicsolve import primrad,primfocus,woltparam
 import utilities.imaging.man as man
 import scatter
 
-import numba
-#from numba import cuda
-
 def computeHEW(x0,psf):
     """
     Compute the HEW from a PSF via the CDF method
