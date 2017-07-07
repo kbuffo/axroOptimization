@@ -17,7 +17,7 @@ subroutine primaryPSF(distortion,xdim,ydim,z,length,x0,N,wave,primfoc,r0,graze,p
   lengthsum = sum(length)
   dz = abs(z(2)-z(1))
   pi = acos(-1.)
-  
+
   do i = 1,N
     psf(i) = 0.
     do xi = 1,xdim

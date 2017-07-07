@@ -74,12 +74,42 @@ def computeMeritFunctions(d,dx,x0=np.linspace(-5.,5.,1000),\
     return rmsPSF/primfoc*180/np.pi*60**2*2,hpdPSF/primfoc*180/np.pi*60**2,\
            [x0,resa]
         
+def correctHFDFC3(d,ifs,shade=None,dx=None,azweight=.015,smax=5.,\
+                          bounds=None):
+    """
+    Get distortion on same grid as IFs and run correction.
+    Rebin result onto original distortion grid and apply.
+    dx should be on IF grid size.
+    Needs update on doc string!
+    """
+    #Rebin to IF grid
+    d2 = man.newGridSize(d,np.shape(ifs[0]))
+
+    #Handle shademask
+    if shade is None:
+        shade = np.ones(np.shape(d2))
+
+    #Run correction
+    volt = slv.correctDistortion(d2,ifs,shade,\
+                                            dx=dx,azweight=azweight,\
+                                            smax=smax,bounds=bounds)
+    
+    #Add correction to original data
+    ifs2 = ifs.transpose(1,2,0)
+    cor2 = np.dot(ifs2,volt)
+    #Handle shademask
+    cor2[shade==0] = np.nan
+    cor3 = man.newGridSize(cor2,np.shape(d),method='linear')
+
+    return cor3,volt
+        
 def correctForCTF(d,ifs,shade=None,dx=None,azweight=.015,smax=5.,\
                           bounds=None):
     """
     Get distortion on same grid as IFs and run correction.
     Rebin result onto original distortion grid and apply.
-    dx should be on IF grid size
+    dx should be on IF grid size.
+    Needs update on doc string!
     """
     #Rebin to IF grid
     d2 = man.newGridSize(d,np.shape(ifs[0]))
