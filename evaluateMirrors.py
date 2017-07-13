@@ -65,9 +65,14 @@ def computeMeritFunctions(d,dx,x0=np.linspace(-5.,5.,1000),\
     if renorm is True:
         resa = resa/integral
 
-    #Compute PSF merit functions
-    rmsPSF = np.sqrt(np.sum(resa*x0**2)*dx2-(np.sum(resa*x0)*dx2)**2)
     cdf = np.cumsum(resa)*dx2
+        
+    #Compute PSF merit functions
+    # Computing the rms rigorously, but not usefully. 
+    #rmsPSF = np.sqrt(np.sum(resa*x0**2)*dx2-(np.sum(resa*x0)*dx2)**2)
+    # Computing the rms by assuming a Gaussian profile.
+    rmsPSF = x0[np.argmin(np.abs(cdf-.84))]-\
+             x0[np.argmin(np.abs(cdf-.16))]
     hpdPSF = x0[np.argmin(np.abs(cdf-.75))]-\
              x0[np.argmin(np.abs(cdf-.25))]
     
