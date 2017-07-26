@@ -38,9 +38,9 @@ def correctXrayTestMirror(d,ifs,shade=None,dx=None,azweight=.015,smax=5.,\
 
     return cor3,volt
 
-def computeMeritFunctions(d,dx,x0=np.linspace(-5.,5.,1000),\
+def computeMeritFunctions(d,dx,x0=np.linspace(-2.,2.,1000),\
                           graze=conic.woltparam(220.,8400.)[0],\
-                          renorm=False):
+                          renorm=True):
     """
     RMS axial slope
     Axial sag

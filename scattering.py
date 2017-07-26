@@ -42,3 +42,5 @@ def primary2DPSF(img,dx,R0=220.,Z0=8400.,x0=np.linspace(-5.,5.,1001),\
     psf = scatter.primarypsf(distortion,z-Z0,length,x0,wave,foc,R0,graze)
     
     return psf
+
+
