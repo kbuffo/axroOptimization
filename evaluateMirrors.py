@@ -8,7 +8,7 @@ import axroOptimization.conicsolve as conic
 import pdb
 
 def correctXrayTestMirror(d,ifs,shade=None,dx=None,azweight=.015,smax=5.,\
-                          bounds=None):
+                          bounds=None,regrid_figure_change = False):
     """
     Get distortion on same grid as IFs and run correction.
     Rebin result onto original distortion grid and apply.
@@ -30,13 +30,20 @@ def correctXrayTestMirror(d,ifs,shade=None,dx=None,azweight=.015,smax=5.,\
     # data to yield the final corrected figure.
     ifs2 = ifs.transpose(1,2,0)
     cor2 = np.dot(ifs2,volt)
-    cor3 = man.newGridSize(cor2,np.shape(d),method='linear')
-    #Handle shademask
-    cor2[shade==0] = np.nan
-    cornan = man.newGridSize(cor2,np.shape(d),method='linear')
-    cor3[np.isnan(cornan)] = np.nan
-
-    return cor3,volt
+    
+    if regrid_figure_change == True:
+        cor3 = man.newGridSize(cor2,np.shape(d),method='linear')
+        #Handle shademask
+        cor2[shade==0] = np.nan
+        cornan = man.newGridSize(cor2,np.shape(d),method='linear')
+        cor3[np.isnan(cornan)] = np.nan
+        fc = cor3
+    else:
+        #Handle shademask
+        cor2[shade==0] = np.nan
+        fc = cor
+        
+    return fc,volt
 
 def computeMeritFunctions(d,dx,x0=np.linspace(-2.,2.,1000),\
                           R0 = 220,Z0 = 8400,wave = 1.24e-6,\
@@ -112,32 +119,32 @@ def correctHFDFC3(d,ifs,shade=None,dx=None,azweight=.015,smax=5.,\
 
     return cor3,volt
         
-def correctForCTF(d,ifs,shade=None,dx=None,azweight=.015,smax=1.0,\
-                          bounds=None,avg_slope_remove = True):
-    """
-    Get distortion on same grid as IFs and run correction.
-    Rebin result onto original distortion grid and apply.
-    dx should be on IF grid size.
-    Needs update on doc string!
-    """
-    #Rebin to IF grid
-    d2 = man.newGridSize(d,np.shape(ifs[0]))
-
-    #Handle shademask
-    if shade is None:
-        shade = np.ones(np.shape(d2))
-
-    #Run correction
-    volt = slv.correctDistortion(d2,ifs,shade,dx=dx,azweight=azweight,\
-                                smax=smax,bounds=bounds,avg_slope_remove = avg_slope_remove)
-    # Compute the correction on the same scale as the original
-    # data. This correction will need to be added to the original
-    # data to yield the final corrected figure.
-    ifs2 = ifs.transpose(1,2,0)
-    cor2 = np.dot(ifs2,volt)
-    #Handle shademask
-    cor2[shade==0] = np.nan
-    
-    return cor2,volt
+#def correctForCTF(d,ifs,shade=None,dx=None,azweight=.015,smax=1.0,\
+#                          bounds=None,avg_slope_remove = True):
+#    """
+#    Get distortion on same grid as IFs and run correction.
+#    Rebin result onto original distortion grid and apply.
+#    dx should be on IF grid size.
+#    Needs update on doc string!
+#    """
+#    #Rebin to IF grid
+#    d2 = man.newGridSize(d,np.shape(ifs[0]))
+#
+#    #Handle shademask
+#    if shade is None:
+#        shade = np.ones(np.shape(d2))
+#
+#    #Run correction
+#    volt = slv.correctDistortion(d2,ifs,shade,dx=dx,azweight=azweight,\
+#                                smax=smax,bounds=bounds,avg_slope_remove = avg_slope_remove)
+#    # Compute the correction on the same scale as the original
+#    # data. This correction will need to be added to the original
+#    # data to yield the final corrected figure.
+#    ifs2 = ifs.transpose(1,2,0)
+#    cor2 = np.dot(ifs2,volt)
+#    #Handle shademask
+#    cor2[shade==0] = np.nan
+#    
+#    return cor2,volt
 
 
