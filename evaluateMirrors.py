@@ -56,8 +56,12 @@ def computeMeritFunctions(d,dx,x0=np.linspace(-2.,2.,1000),\
 
     #Make sure over 95% of flux falls in detector
     integral = np.sum(resa)*dx2
+    #print integral
     if integral < .95:
         print 'Possible sampling problem'
+        print str(np.sum(resa)*dx2)
+    if integral > 1.5:
+        print 'Possible aliasing problem'
         print str(np.sum(resa)*dx2)
 
     #Normalize the integral to account for some flux
@@ -108,8 +112,8 @@ def correctHFDFC3(d,ifs,shade=None,dx=None,azweight=.015,smax=5.,\
 
     return cor3,volt
         
-def correctForCTF(d,ifs,shade=None,dx=None,azweight=.015,smax=5.,\
-                          bounds=None):
+def correctForCTF(d,ifs,shade=None,dx=None,azweight=.015,smax=1.0,\
+                          bounds=None,avg_slope_remove = True):
     """
     Get distortion on same grid as IFs and run correction.
     Rebin result onto original distortion grid and apply.
@@ -124,9 +128,8 @@ def correctForCTF(d,ifs,shade=None,dx=None,azweight=.015,smax=5.,\
         shade = np.ones(np.shape(d2))
 
     #Run correction
-    volt = slv.correctDistortion(d2,ifs,shade,\
-                                            dx=dx,azweight=azweight,\
-                                            smax=smax,bounds=bounds)
+    volt = slv.correctDistortion(d2,ifs,shade,dx=dx,azweight=azweight,\
+                                smax=smax,bounds=bounds,avg_slope_remove = avg_slope_remove)
     # Compute the correction on the same scale as the original
     # data. This correction will need to be added to the original
     # data to yield the final corrected figure.

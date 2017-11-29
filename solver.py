@@ -13,8 +13,6 @@ def ampMeritFunction(voltages,distortion,ifuncs):
     shade is 2D array shade mask
     Simply compute sum(ifuncs*voltages-distortion)**2)
     """
-    #Numpy way
-    #r = np.dot(ifuncs,voltages)-distortion
     res = np.mean((np.dot(ifuncs,voltages)-distortion)**2)
     return res
 
@@ -103,7 +101,7 @@ def prepareIFs(ifs,dx=None,azweight=.015):
 
     return np.transpose(ifs)
 
-def prepareDist(d,dx=None,azweight=.015):
+def prepareDist(d,dx=None,azweight=0.015,avg_slope_remove = True):
     """
     Put distortion array in format required by optimizer.
     If dx is not None, apply derivative.
@@ -113,8 +111,8 @@ def prepareDist(d,dx=None,azweight=.015):
     #First element of result is axial derivative
     if dx is not None:
         d = np.array(np.gradient(d,*dx))*180/np.pi*60.**2 / 1000.
-        d[0] = d[0] - np.nanmean(d[0])
-        d[1] = d[1] - np.nanmean(d[1])
+        d[0] = d[0] - np.nanmean(d[0])*avg_slope_remove
+        d[1] = d[1] - np.nanmean(d[1])*avg_slope_remove
         d[1] = d[1]*azweight
         
     return d.flatten()
@@ -136,8 +134,17 @@ def optimizer(distortion,ifs,shade,smin=0.,smax=5.,bounds=None,compare=False):
 
     #Remove shademask
     # NOTE! This is not working correctly with the azimuthal weighting.
-    ifs = ifs[shade==1]
-    distortion = distortion[shade==1]
+    # Covering the case with no azimuthal weighting.
+    if len(distortion) == len(shade):
+        ifs = ifs[shade==1]
+        distortion = distortion[shade==1]
+    elif len(distortion) == 2*len(shade):
+        pdb.set_trace()
+        ifs = np.vstack((ifs[:len(shade)][shade==1],ifs[len(shade):][shade==1]))
+        distortion = np.concatenate((distortion[:len(shade)][shade==1],distortion[len(shade):][shade==1]))
+    else:
+        print 'Distortion not an expected length relative to the shade -- investigation needed.'
+        pdb.set_trace()
 
     #Remove nans
     ind = ~np.isnan(distortion)
@@ -158,12 +165,11 @@ def optimizer(distortion,ifs,shade,smin=0.,smax=5.,bounds=None,compare=False):
     optv = fmin_slsqp(ampMeritFunction,np.zeros(np.shape(ifs)[1]),\
                       bounds=bounds,args=(distortion,ifs),\
                       iprint=1,fprime=ampMeritDerivative,iter=1000,\
-                      acc=1.e-6)
-
+                      acc=1.e-10)
     return optv
 
 def correctDistortion(dist,ifs,shade,dx=None,azweight=.015,smax=5.,\
-                      bounds=None,compare=False):
+                      bounds=None,avg_slope_remove = True,compare=False):
     """
     Wrapper function to apply and evaluate a correction
     on distortion data.
@@ -177,7 +183,7 @@ def correctDistortion(dist,ifs,shade,dx=None,azweight=.015,smax=5.,\
         return None
 
     #Prepare arrays
-    distp = prepareDist(dist,dx=dx,azweight=azweight)
+    distp = prepareDist(dist,dx=dx,azweight=azweight,avg_slope_remove = avg_slope_remove)
     ifsp = prepareIFs(ifs,dx=dx,azweight=azweight)
     shadep = prepareDist(shade)
 
