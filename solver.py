@@ -152,7 +152,9 @@ def optimizer(distortion,ifs,shade,smin=0.,smax=5.,bounds=None,compare=False):
 
     if compare is True:
         #Output arrays as fits to be compared using MATLAB
-        return ifs,distortion
+        np.savetxt('171129_IFsFromOptimizer.txt',ifs)
+        np.savetxt('171129_DistortionFromOptimizer.txt',distortion)
+        #return ifs,distortion
     
     #Handle bounds
     if bounds is None:
@@ -163,12 +165,12 @@ def optimizer(distortion,ifs,shade,smin=0.,smax=5.,bounds=None,compare=False):
     #Call optimizer algorithm
     optv = fmin_slsqp(ampMeritFunction,np.zeros(np.shape(ifs)[1]),\
                       bounds=bounds,args=(distortion,ifs),\
-                      iprint=1,fprime=ampMeritDerivative,iter=1000,\
+                      iprint=2,fprime=ampMeritDerivative,iter=1000,\
                       acc=1.e-10)
     return optv
 
 def correctDistortion(dist,ifs,shade,dx=None,azweight=.015,smax=5.,\
-                      bounds=None,avg_slope_remove = True,compare=False):
+                      bounds=None,avg_slope_remove = True,compare=True):
     """
     Wrapper function to apply and evaluate a correction
     on distortion data.
