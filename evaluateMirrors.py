@@ -39,7 +39,7 @@ def correctXrayTestMirror(d,ifs,shade=None,dx=None,azweight=.015,smax=5.,\
     return cor3,volt
 
 def computeMeritFunctions(d,dx,x0=np.linspace(-2.,2.,1000),\
-                          graze=conic.woltparam(220.,8400.)[0],\
+                          R0 = 220,Z0 = 8400,wave = 1.24e-6,\
                           renorm=True):
     """
     RMS axial slope
@@ -50,13 +50,13 @@ def computeMeritFunctions(d,dx,x0=np.linspace(-2.,2.,1000),\
     d = man.stripnans(d)
         
     #Compute PSF
-    primfoc = conic.primfocus(220.,8400.)
+    primfoc = conic.primfocus(R0,Z0)
     dx2 = x0[1]-x0[0]
-    resa = scat.primary2DPSF(d,dx[0],x0=x0)
+    resa = scat.primary2DPSF(d,dx[0],R0 = R0,Z0 = Z0,x0=x0,wave = wave)
 
     #Make sure over 95% of flux falls in detector
     integral = np.sum(resa)*dx2
-    #print integral
+    
     if integral < .95:
         print 'Possible sampling problem'
         print str(np.sum(resa)*dx2)

@@ -139,7 +139,6 @@ def optimizer(distortion,ifs,shade,smin=0.,smax=5.,bounds=None,compare=False):
         ifs = ifs[shade==1]
         distortion = distortion[shade==1]
     elif len(distortion) == 2*len(shade):
-        pdb.set_trace()
         ifs = np.vstack((ifs[:len(shade)][shade==1],ifs[len(shade):][shade==1]))
         distortion = np.concatenate((distortion[:len(shade)][shade==1],distortion[len(shade):][shade==1]))
     else:

@@ -15,7 +15,7 @@ def computeHEW(x0,psf):
              x0[np.argmin(np.abs(cdf-.25))]
     return hpdPSF
 
-def primary2DPSF(img,dx,R0=220.,Z0=8400.,x0=np.linspace(-5.,5.,1001),\
+def primary2DPSF(img,dx,R0=220.,Z0=8400.,x0=np.linspace(-2.,2.,1001),\
                  wave=1.24e-6):
     """
     Create height vector and radius img based on
