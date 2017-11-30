@@ -8,7 +8,8 @@ import axroOptimization.conicsolve as conic
 import pdb
 
 def correctXrayTestMirror(d,ifs,shade=None,dx=None,azweight=.015,smax=5.,\
-                          bounds=None,regrid_figure_change = False,avg_slope_remove = True):
+                          bounds=None,regrid_figure_change = False,avg_slope_remove = True,\
+                          matlab_opt = False):
     """
     Get distortion on same grid as IFs and run correction.
     Rebin result onto original distortion grid and apply.
@@ -22,9 +23,9 @@ def correctXrayTestMirror(d,ifs,shade=None,dx=None,azweight=.015,smax=5.,\
         shade = np.ones(np.shape(d2))
 
     #Run correction
-    volt = slv.correctDistortion(d2,ifs,shade,\
-                                            dx=dx,azweight=azweight,\
-                                            smax=smax,bounds=bounds,avg_slope_remove = avg_slope_remove)
+    volt = slv.correctDistortion(d2,ifs,shade,dx=dx,azweight=azweight,
+                                smax=smax,bounds=bounds,avg_slope_remove = avg_slope_remove,
+                                matlab_opt = matlab_opt)
     # Compute the correction on the same scale as the original
     # data. This correction will need to be added to the original
     # data to yield the final corrected figure.

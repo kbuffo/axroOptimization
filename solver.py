@@ -5,6 +5,8 @@ import astropy.io.fits as pyfits
 import scipy.interpolate as interp
 import utilities.transformations as tr
 
+from axroOptimization.matlab_funcs import matlab_lsqlin_optimization
+
 def ampMeritFunction(voltages,distortion,ifuncs):
     """Simple merit function calculator.
     voltages is 1D array of weights for the influence functions
@@ -117,7 +119,7 @@ def prepareDist(d,dx=None,azweight=0.015,avg_slope_remove = True):
         
     return d.flatten()
 
-def optimizer(distortion,ifs,shade,smin=0.,smax=5.,bounds=None,compare=False):
+def optimizer(distortion,ifs,shade,smin=0.,smax=5.,bounds=None,matlab_opt = False):
     """
     Cleaner implementation of optimizer. ifs and distortion should
     already be in whatever form (amplitude or slope) desired.
@@ -149,28 +151,26 @@ def optimizer(distortion,ifs,shade,smin=0.,smax=5.,bounds=None,compare=False):
     ind = ~np.isnan(distortion)
     ifs = ifs[ind]
     distortion = distortion[ind]
-
-    if compare is True:
-        #Output arrays as fits to be compared using MATLAB
-        np.savetxt('171129_IFsFromOptimizer.txt',ifs)
-        np.savetxt('171129_DistortionFromOptimizer.txt',distortion)
-        #return ifs,distortion
     
     #Handle bounds
     if bounds is None:
         bounds = []
         for i in range(np.shape(ifs)[1]):
             bounds.append((smin,smax))
-            
+    
+    if matlab_opt is True:
+        optv = matlab_lsqlin_optimization(ifs,distortion,bounds)
+
     #Call optimizer algorithm
-    optv = fmin_slsqp(ampMeritFunction,np.zeros(np.shape(ifs)[1]),\
-                      bounds=bounds,args=(distortion,ifs),\
-                      iprint=2,fprime=ampMeritDerivative,iter=1000,\
-                      acc=1.e-10)
+    else:
+        optv = fmin_slsqp(ampMeritFunction,np.zeros(np.shape(ifs)[1]),\
+                          bounds=bounds,args=(distortion,ifs),\
+                          iprint=1,fprime=ampMeritDerivative,iter=1000,\
+                          acc=1.e-10)
     return optv
 
 def correctDistortion(dist,ifs,shade,dx=None,azweight=.015,smax=5.,\
-                      bounds=None,avg_slope_remove = True,compare=True):
+                      bounds=None,avg_slope_remove = True,matlab_opt = False):
     """
     Wrapper function to apply and evaluate a correction
     on distortion data.
@@ -189,7 +189,7 @@ def correctDistortion(dist,ifs,shade,dx=None,azweight=.015,smax=5.,\
     shadep = prepareDist(shade)
 
     #Run optimizer
-    res = optimizer(-distp,ifsp,shadep,smax=smax,bounds=bounds,compare=compare)
+    res = optimizer(-distp,ifsp,shadep,smax=smax,bounds=bounds,matlab_opt = matlab_opt)
 
     return res
 
