@@ -47,7 +47,7 @@ def correctXrayTestMirror(d,ifs,shade=None,dx=None,azweight=.015,smax=5.,\
     return fc,volt
 
 def computeMeritFunctions(d,dx,x0=np.linspace(-2.,2.,1000),\
-                          R0 = 220,Z0 = 8400,wave = 1.24e-6,\
+                          R0 = 220.,Z0 = 8400.,wave = 1.24e-6,\
                           renorm=True):
     """
     RMS axial slope

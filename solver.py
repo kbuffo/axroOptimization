@@ -135,7 +135,6 @@ def optimizer(distortion,ifs,shade,smin=0.,smax=5.,bounds=None,matlab_opt = Fals
         shade = pyfits.getdata(shade)
 
     #Remove shademask
-    # NOTE! This is not working correctly with the azimuthal weighting.
     # Covering the case with no azimuthal weighting.
     if len(distortion) == len(shade):
         ifs = ifs[shade==1]
@@ -165,7 +164,7 @@ def optimizer(distortion,ifs,shade,smin=0.,smax=5.,bounds=None,matlab_opt = Fals
     else:
         optv = fmin_slsqp(ampMeritFunction,np.zeros(np.shape(ifs)[1]),\
                           bounds=bounds,args=(distortion,ifs),\
-                          iprint=1,fprime=ampMeritDerivative,iter=1000,\
+                          iprint=2,fprime=ampMeritDerivative,iter=1000,\
                           acc=1.e-10)
     return optv
 
