@@ -157,6 +157,9 @@ def optimizer(distortion,ifs,shade,smin=0.,smax=5.,bounds=None,matlab_opt = Fals
         for i in range(np.shape(ifs)[1]):
             bounds.append((smin,smax))
     
+    #np.savetxt('ifs.txt',ifs)
+    #np.savetxt('dist.txt',distortion)
+    
     if matlab_opt is True:
         optv = matlab_lsqlin_optimization(ifs,distortion,bounds)
 

@@ -155,8 +155,8 @@ def mirror_subplot(data_img,ax,title,cbar_label,extent = None,vmin = None,vmax =
         cbar.set_label(cbar_label,fontsize = 16)
     
     if merit is not None:
-        ax.text(0.05,0.05,merit1_label + ': ' + "{:4.1f}".format(merit[0]) + ' ' + merit1_unit,ha = 'left',transform = ax.transAxes)
-        ax.text(0.05,0.10,merit2_label + ': ' + "{:3.1f}".format(merit[1]) + ' ' + merit2_unit,ha = 'left',transform = ax.transAxes)
+        ax.text(0.05,0.05,merit1_label + ': ' + "{:4.3f}".format(merit[0]) + ' ' + merit1_unit,ha = 'left',transform = ax.transAxes)
+        ax.text(0.05,0.10,merit2_label + ': ' + "{:3.3f}".format(merit[1]) + ' ' + merit2_unit,ha = 'left',transform = ax.transAxes)
 
 def plot_correction_inline(input_dist,fc,cor,dx,first_title = '',second_title = '',third_title = '',
                              cbar_label = '',global_title = '',save_file = None,vbounds = None,dist_merit = None,\
@@ -309,6 +309,63 @@ def plot_fig_slope_sidebyside(input_data,input_slopes,dx,individual_title = '',g
         plt.savefig(save_file)
         plt.close()
     return fig,(ax1,ax2)
+
+def mirror_subplot_vlad(data_img,ax,title,cbar_label,extent = None,vmin = None,vmax = None,draw_cbar = True,merit = None,
+                     merit1_label = 'PSF E68', merit2_label = 'PSF HPD',merit1_unit = 'asec.',merit2_unit = 'asec.'):
+    '''
+    The default figure plot style I want to use. Needs a specified input
+    data set, plotting axis and title. Options include an extent, vmin/vmax args,
+    and adding a merit function to the plot.
+    '''
+    im = ax.imshow(data_img,extent = extent,vmin = vmin,vmax = vmax)
+    ax.set_xlabel('Azimuthal Dimension (mm)',fontsize = 12)
+    ax.set_ylabel('Axial Dimension (mm)',fontsize = 12)
+    ax.set_title(title,fontsize = 16)
+    if draw_cbar is True:
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes("right", size="5%", pad=0.10)
+        cbar = plt.colorbar(im, cax = cax,format='%.0e')
+        cbar.set_label(cbar_label,fontsize = 12)
+    
+    if merit is not None:
+        ax.text(0.05,0.05,merit1_label + ': ' + "{:3.2e}".format(merit[0]) + ' ' + merit1_unit,ha = 'left',transform = ax.transAxes)
+        ax.text(0.05,0.10,merit2_label + ': ' + "{:3.2e}".format(merit[1]) + ' ' + merit2_unit,ha = 'left',transform = ax.transAxes)
+
+def plot_correction_inline_vlad(input_dist,fc,cor,dx,first_title = '',second_title = '',third_title = '',
+                             cbar_label = '',global_title = '',save_file = None,dist_merit = None,vbounds = None,\
+                             fc_merit = None,cor_merit = None,
+                             merit1_label = 'PSF E68', merit2_label = 'PSF HPD',merit1_unit = 'asec.',merit2_unit = 'asec.'):
+    '''
+    '''
+    fig = plt.figure(figsize = (18,5))
+    gs = gridspec.GridSpec(1,3)
+    ax1 = fig.add_subplot(gs[0])
+    ax2 = fig.add_subplot(gs[1])
+    ax3 = fig.add_subplot(gs[2])
+
+    plot_dist = man.stripnans(input_dist - nanmean(input_dist))
+    plot_fc = man.newGridSize(man.stripnans(fc - nanmean(fc)),shape(plot_dist))
+    plot_cor = man.newGridSize(man.stripnans(cor - nanmean(cor)),shape(plot_dist))
+    
+    extent = [-shape(plot_dist)[0]/2*dx,shape(plot_dist)[0]/2*dx,-shape(plot_dist)[0]/2*dx,shape(plot_dist)[0]/2*dx]
+    
+    #if vbounds is None:    
+    #    vmin,vmax = nanmin([plot_dist,plot_fc,plot_cor]),nanmax([plot_dist,plot_fc,plot_cor])
+    #else:
+    #    [vmin,vmax] = vbounds
+
+    mirror_subplot_vlad(plot_dist,ax1,first_title,cbar_label,extent = extent, merit = dist_merit,merit1_label = merit1_label, merit2_label = merit2_label,merit1_unit = merit1_unit,merit2_unit = merit2_unit)
+    mirror_subplot_vlad(plot_fc,ax2,second_title,cbar_label,extent = extent, merit = fc_merit,merit1_label = merit1_label, merit2_label = merit2_label,merit1_unit = merit1_unit,merit2_unit = merit2_unit)
+    mirror_subplot_vlad(plot_cor,ax3,third_title,cbar_label,extent = extent, merit = cor_merit,merit1_label = merit1_label, merit2_label = merit2_label,merit1_unit = merit1_unit,merit2_unit = merit2_unit)
+    
+    fig.subplots_adjust(top = 0.74,hspace = 0.3,wspace = 0.5)
+    
+    plt.suptitle(global_title,fontsize = 20)
+    
+    if save_file != None:
+        plt.savefig(save_file)
+        plt.close()
+    return plot_dist,plot_fc,plot_cor
 
 #####################################################################################
 #####################################################################################
