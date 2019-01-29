@@ -5,7 +5,7 @@ import astropy.io.fits as pyfits
 import scipy.interpolate as interp
 import utilities.transformations as tr
 
-from axroOptimization.matlab_funcs import matlab_lsqlin_optimization
+#from axroOptimization.matlab_funcs import matlab_lsqlin_optimization
 
 def ampMeritFunction(voltages,distortion,ifuncs):
     """Simple merit function calculator.
