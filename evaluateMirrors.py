@@ -46,7 +46,7 @@ def correctXrayTestMirror(d,ifs,shade=None,dx=None,azweight=.015,smax=5.,\
         
     return fc,volt
 
-def computeMeritFunctions(d,dx,x0=np.linspace(-2.,2.,1000),\
+def computeMeritFunctions(d,dx,x0=np.linspace(-2.,2.,100001),\
                           R0 = 220.,Z0 = 8400.,wave = 1.24e-6,\
                           renorm=True):
     """
@@ -88,7 +88,7 @@ def computeMeritFunctions(d,dx,x0=np.linspace(-2.,2.,1000),\
     hpdPSF = x0[np.argmin(np.abs(cdf-.75))]-\
              x0[np.argmin(np.abs(cdf-.25))]
     
-    return rmsPSF/primfoc*180/np.pi*60**2*2,hpdPSF/primfoc*180/np.pi*60**2,\
+    return rmsPSF/primfoc*180/np.pi*60**2,hpdPSF/primfoc*180/np.pi*60**2,\
            [x0,resa]
         
 def correctHFDFC3(d,ifs,shade=None,dx=None,azweight=.015,smax=5.,\
