@@ -46,7 +46,7 @@ def correctXrayTestMirror(d,ifs,shade=None,dx=None,azweight=.015,smax=5.,\
         
     return fc,volt
 
-def computeMeritFunctions(d,dx,x0=np.linspace(-2.,2.,100001),\
+def computeMeritFunctions(d,dx,x0=np.linspace(-2.,2.,10001),\
                           R0 = 220.,Z0 = 8400.,wave = 1.24e-6,\
                           renorm=True):
     """
