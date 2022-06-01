@@ -1,6 +1,9 @@
 from numpy import *
 import matplotlib.pyplot as plt
 
+def printer():
+    print('Hello cell mapping!')
+
 ex_volts = arange(1,113)
 cell_map = array([
                 [57,58,59,60,3,2,1],
@@ -140,7 +143,7 @@ def mapToCells(arr,cell_dict = hfdfc_cell_dict):
 	output[:] = NaN
 
 	if len(arr) != 112:
-		print 'Mismatched dimensions!'
+		print('Mismatched dimensions!')
 		return output
 	else:
 		for ind in arange(112):

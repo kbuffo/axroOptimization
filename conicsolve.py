@@ -3,6 +3,9 @@ from numpy import *
 from matplotlib.pyplot import *
 import pdb
 
+def printer():
+    print('Hello cell mapping!')
+
 #Return radius of mirror at arbitrary z coordinate
 def primrad(z,r0,z0,psi=1.):
     alpha = .25*arctan(r0/z0)
@@ -24,7 +27,7 @@ def primsag(z1,r0,z0):
     r = primrad(z,r0,z0)
     fit = np.polyfit(z,r,2)
     return np.abs(fit[0]*((z1-z0)/2.)**2)
-    
+
 
 def secrad(z,r0,z0,psi=1.):
     alpha = .25*arctan(r0/z0)
@@ -90,11 +93,11 @@ def rGoal_to_rMax(rgoal,z0,zmax):
 #Determine set of primary prescriptions to intercept beam
 def primaryintercept(rmax,rmin,z0,zmin,zmax):
     rnew = rGoal_to_rMax(rmax,z0,zmax)
-    print rnew
+    print(rnew)
     while rnew > rmin:
         rmax = primrad(zmin,rnew,z0)
         rnew = rGoal_to_rMax(rmax,z0,zmax)
-        print rnew
+        print(rnew)
 
 #W-S Parameters
 def wsPrimFunction(r0,z0,psi,x,y,z):
@@ -277,7 +280,7 @@ def ellipsoidFunction(S,psi,R,F):
     #arrive at hyperbola parameters. The psi
     #will be different and should be calculated
     #in the Wolter-I geometry knowing F and P
-    
+
     return P,a,b,e,f
 
 def ellipsoidRad(S,psi,R,F,z):
@@ -321,4 +324,3 @@ def solveS(P,a,b,e,f,x,y,z,l,m,n):
     s1 = -b2+sqrt(b2**2-c2)
     s2 = -b2-sqrt(b2**2-c2)
     return b2,c2,s1,s2
-    

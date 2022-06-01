@@ -21,6 +21,9 @@ import axroOptimization.evaluateMirrors as eva
 
 home_directory = os.getcwd()
 
+def printer():
+    print('Hello correlation utilitiy functions!')
+
 ##########################################################################################################
 # Utility functions.
 
@@ -50,7 +53,7 @@ def generateAxialSineModel(amp,period,ylen,xlen,dy,phase = 0.0):
 
 def generate2DLegendreModel(xo,yo,xlen,ylen,coeffs = None):
     '''
-    
+
     '''
     x,y = meshgrid(linspace(-1,1,xlen),linspace(-1,1,ylen))
     g = models.Legendre2D(xo,yo)
@@ -81,7 +84,7 @@ def readCylWFSRaw(fn):
     #Remove NaNs and rescale
     d = pyfits.getdata(fn)
     d = man.stripnans(d)
-    
+
     # Negate to make bump positive.
     d = -d
 
@@ -91,10 +94,10 @@ def reshapeMeasToCorrection(raw_correction,shape_match,mask_fraction):
     # Loading the as-measured correction and processing it appropriately to be stripped of
     # exterior NaNs, bump positive, and have best fit cylinder removed (like dist_map and the ifs).
     # This raw correction has its own distinct shape of order 120 by 100.
-    
+
     # Creating a perimeter shademask consistent with the size of the measured change.
     meas_shade = eva.slv.createShadePerimeter(shape(raw_correction),axialFraction = mask_fraction,azFraction = mask_fraction)
-    
+
     # Now making the measured relative change directly comparable to the area of the
     # distortion map we are trying to correct by putting the shade mask in place, and
     # then interpolating to the size of dist_map.
@@ -153,7 +156,7 @@ def mirror_subplot(data_img,ax,title,cbar_label,extent = None,vmin = None,vmax =
         cax = divider.append_axes("right", size="5%", pad=0.10)
         cbar = plt.colorbar(im, cax = cax)
         cbar.set_label(cbar_label,fontsize = 16)
-    
+
     if merit is not None:
         ax.text(0.05,0.05,merit1_label + ': ' + "{:4.3f}".format(merit[0]) + ' ' + merit1_unit,ha = 'left',transform = ax.transAxes)
         ax.text(0.05,0.10,merit2_label + ': ' + "{:3.3f}".format(merit[1]) + ' ' + merit2_unit,ha = 'left',transform = ax.transAxes)
@@ -173,10 +176,10 @@ def plot_correction_inline(input_dist,fc,cor,dx,first_title = '',second_title = 
     plot_dist = man.stripnans(input_dist - nanmean(input_dist))
     plot_fc = man.newGridSize(man.stripnans(fc - nanmean(fc)),shape(plot_dist))
     plot_cor = man.newGridSize(man.stripnans(cor - nanmean(cor)),shape(plot_dist))
-    
+
     extent = [-shape(plot_dist)[0]/2*dx,shape(plot_dist)[0]/2*dx,-shape(plot_dist)[0]/2*dx,shape(plot_dist)[0]/2*dx]
-    
-    if vbounds is None:    
+
+    if vbounds is None:
         vmin,vmax = nanmin([plot_dist,plot_fc,plot_cor]),nanmax([plot_dist,plot_fc,plot_cor])
     else:
         [vmin,vmax] = vbounds
@@ -184,11 +187,11 @@ def plot_correction_inline(input_dist,fc,cor,dx,first_title = '',second_title = 
     mirror_subplot(plot_dist,ax1,first_title,cbar_label,extent = extent,vmin = vmin,vmax = vmax, merit = dist_merit,merit1_label = merit1_label, merit2_label = merit2_label,merit1_unit = merit1_unit,merit2_unit = merit2_unit)
     mirror_subplot(plot_fc,ax2,second_title,cbar_label,extent = extent,vmin = vmin,vmax = vmax, merit = fc_merit,merit1_label = merit1_label, merit2_label = merit2_label,merit1_unit = merit1_unit,merit2_unit = merit2_unit)
     mirror_subplot(plot_cor,ax3,third_title,cbar_label,extent = extent,vmin = vmin,vmax = vmax, merit = cor_merit,merit1_label = merit1_label, merit2_label = merit2_label,merit1_unit = merit1_unit,merit2_unit = merit2_unit)
-    
+
     fig.subplots_adjust(top = 0.74,hspace = 0.4,wspace = 0.4)
-    
+
     plt.suptitle(global_title,fontsize = 20)
-    
+
     if save_file != None:
         plt.savefig(save_file)
         plt.close()
@@ -212,25 +215,25 @@ def plot_measured_correction_sixfig(input_dist,theo_corr,meas_corr0,meas_corr1,d
     plot_theo_corr = man.newGridSize(man.stripnans(theo_corr - nanmean(theo_corr)),shape(plot_dist))
     plot_meas_corr0 = man.newGridSize(man.stripnans(meas_corr0 - nanmean(meas_corr0)),shape(plot_dist))
     plot_meas_corr1 = man.newGridSize(man.stripnans(meas_corr1 - nanmean(meas_corr1)),shape(plot_dist))
-    
+
     extent = [-shape(plot_theo_corr)[0]/2*dx,shape(plot_theo_corr)[0]/2*dx,-shape(plot_theo_corr)[0]/2*dx,shape(plot_theo_corr)[0]/2*dx]
-    if vbounds == None:    
+    if vbounds == None:
         vmin = nanmin([plot_dist,plot_theo_corr,plot_meas_corr0,plot_dist + plot_meas_corr0,plot_meas_corr1,plot_dist + plot_meas_corr1]),
         vmax = nanmax([plot_dist,plot_theo_corr,plot_meas_corr,plot_dist + plot_meas_corr,plot_meas_corr1,plot_dist + plot_meas_corr1])
     else:
         [vmin,vmax] = vbounds
-    
+
     mirror_subplot(plot_dist,ax1,first_title,cbar_label,extent = extent,vmin = vmin,vmax = vmax, merit = dist_merit)
     mirror_subplot(plot_theo_corr,ax2,second_title,cbar_label,extent = extent,vmin = vmin,vmax = vmax, merit = None)
     mirror_subplot(plot_meas_corr0,ax3,third_title,cbar_label,extent = extent,vmin = vmin,vmax = vmax, merit = None)
     mirror_subplot(plot_meas_corr0 + plot_dist,ax4,fourth_title,cbar_label,extent = extent,vmin = vmin,vmax = vmax, merit = meas_corr_merit0)
     mirror_subplot(plot_meas_corr1,ax5,fifth_title,cbar_label,extent = extent,vmin = vmin,vmax = vmax, merit = None)
     mirror_subplot(plot_meas_corr1 + plot_dist,ax6,sixth_title,cbar_label,extent = extent,vmin = vmin,vmax = vmax, merit = meas_corr_merit1)
-    
+
     fig.subplots_adjust(hspace = 0.4,wspace = 0.3)
-    
+
     plt.suptitle(global_title,fontsize = 20)
-    
+
     if save_file != None:
         plt.savefig(save_file)
         plt.close()
@@ -250,8 +253,8 @@ def plot_compare_theo_meas_corr(plot_dist,plot_theo_corr,plot_meas_corr,plot_com
     ax4 = fig.add_subplot(gs[3])
 
     extent = [-shape(plot_theo_corr)[0]/2*dx,shape(plot_theo_corr)[0]/2*dx,-shape(plot_theo_corr)[0]/2*dx,shape(plot_theo_corr)[0]/2*dx]
-    
-    if vbounds == None:    
+
+    if vbounds == None:
         vmin,vmax = nanmin([plot_dist,plot_corr,plot_dist + plot_corr]),nanmax([plot_dist,plot_corr,plot_dist + plot_corr])
     else:
         [vmin,vmax] = vbounds
@@ -259,16 +262,16 @@ def plot_compare_theo_meas_corr(plot_dist,plot_theo_corr,plot_meas_corr,plot_com
     mirror_subplot(plot_dist,ax1,first_title,cbar_label,extent = extent,vmin = vmin,vmax = vmax,merit = dist_merit)
     mirror_subplot(plot_theo_corr + plot_dist,ax2,second_title,cbar_label,extent = extent,vmin = vmin,vmax = vmax,merit = theo_corr_merit)
     mirror_subplot(plot_meas_corr + plot_dist,ax3,third_title,cbar_label,extent = extent,vmin = vmin,vmax = vmax,merit = meas_corr_merit)
-    
+
     if slope is False:
         mirror_subplot(plot_compare_theo_meas,ax4,fourth_title,cbar_label,extent = extent,vmin = -0.100,vmax = 0.100,merit = [nanstd(plot_compare_theo_meas*10**3),pv(plot_compare_theo_meas)*10**3],
                         merit1_label = 'RMS', merit2_label = 'PV',merit1_unit = 'nm',merit2_unit = 'nm')
     else:
         mirror_subplot(plot_compare_theo_meas,ax4,fourth_title,cbar_label,extent = extent,vmin = -2,vmax = 2,merit = [nanstd(plot_compare_theo_meas),pv(plot_compare_theo_meas)],
                        merit1_label = 'RMS', merit2_label = 'PV',merit1_unit = 'asec.',merit2_unit = 'asec.')
-    
+
     fig.subplots_adjust(top = 0.85,hspace = 0.4,wspace = 0.4)
-    
+
     plt.suptitle(global_title,fontsize = 20)
 
     if save_file != None:
@@ -287,14 +290,14 @@ def plot_fig_slope_sidebyside(input_data,input_slopes,dx,individual_title = '',g
         ax2 = fig.add_subplot(gs[1])
     else:
         fig,(ax1,ax2) = plot_to_use
-        
+
     plot_figdata,plot_slopedata = input_data,input_slopes
-    
+
     extent = [-shape(plot_figdata)[0]/2*dx,shape(plot_figdata)[0]/2*dx,-shape(plot_figdata)[0]/2*dx,shape(plot_figdata)[0]/2*dx]
-    
-    if vbounds_fig is None:    
+
+    if vbounds_fig is None:
         vbounds_fig = [nanmin([plot_figdata]),nanmax([plot_figdata])]
-    if vbounds_slope is None:    
+    if vbounds_slope is None:
         vbounds_slope = [nanmin([plot_slopedata]),nanmax([plot_slopedata])]
 
     mirror_subplot(plot_figdata,ax1,individual_title + 'Figure Space',cbar_label = 'Figure (microns)',extent = extent,vmin = vbounds_fig[0],vmax = vbounds_fig[1], merit = fig_merit,
@@ -304,7 +307,7 @@ def plot_fig_slope_sidebyside(input_data,input_slopes,dx,individual_title = '',g
 
     fig.subplots_adjust(top = 0.9,hspace = 0.4,wspace = 0.4)
     plt.suptitle(global_title,fontsize = 20)
-    
+
     if save_file != None:
         plt.savefig(save_file)
         plt.close()
@@ -326,7 +329,7 @@ def mirror_subplot_vlad(data_img,ax,title,cbar_label,extent = None,vmin = None,v
         cax = divider.append_axes("right", size="5%", pad=0.10)
         cbar = plt.colorbar(im, cax = cax,format='%.0e')
         cbar.set_label(cbar_label,fontsize = 12)
-    
+
     if merit is not None:
         ax.text(0.05,0.05,merit1_label + ': ' + "{:3.2e}".format(merit[0]) + ' ' + merit1_unit,ha = 'left',transform = ax.transAxes)
         ax.text(0.05,0.10,merit2_label + ': ' + "{:3.2e}".format(merit[1]) + ' ' + merit2_unit,ha = 'left',transform = ax.transAxes)
@@ -346,10 +349,10 @@ def plot_correction_inline_vlad(input_dist,fc,cor,dx,first_title = '',second_tit
     plot_dist = man.stripnans(input_dist - nanmean(input_dist))
     plot_fc = man.newGridSize(man.stripnans(fc - nanmean(fc)),shape(plot_dist))
     plot_cor = man.newGridSize(man.stripnans(cor - nanmean(cor)),shape(plot_dist))
-    
+
     extent = [-shape(plot_dist)[0]/2*dx,shape(plot_dist)[0]/2*dx,-shape(plot_dist)[0]/2*dx,shape(plot_dist)[0]/2*dx]
-    
-    #if vbounds is None:    
+
+    #if vbounds is None:
     #    vmin,vmax = nanmin([plot_dist,plot_fc,plot_cor]),nanmax([plot_dist,plot_fc,plot_cor])
     #else:
     #    [vmin,vmax] = vbounds
@@ -357,11 +360,11 @@ def plot_correction_inline_vlad(input_dist,fc,cor,dx,first_title = '',second_tit
     mirror_subplot_vlad(plot_dist,ax1,first_title,cbar_label,extent = extent, merit = dist_merit,merit1_label = merit1_label, merit2_label = merit2_label,merit1_unit = merit1_unit,merit2_unit = merit2_unit)
     mirror_subplot_vlad(plot_fc,ax2,second_title,cbar_label,extent = extent, merit = fc_merit,merit1_label = merit1_label, merit2_label = merit2_label,merit1_unit = merit1_unit,merit2_unit = merit2_unit)
     mirror_subplot_vlad(plot_cor,ax3,third_title,cbar_label,extent = extent, merit = cor_merit,merit1_label = merit1_label, merit2_label = merit2_label,merit1_unit = merit1_unit,merit2_unit = merit2_unit)
-    
+
     fig.subplots_adjust(top = 0.74,hspace = 0.3,wspace = 0.5)
-    
+
     plt.suptitle(global_title,fontsize = 20)
-    
+
     if save_file != None:
         plt.savefig(save_file)
         plt.close()
@@ -380,20 +383,20 @@ def plot_slumped_data_map(slump_data,shademask):
     ax1.set_xlabel('Azimuthal Dimension (mm)',fontsize = 16)
     ax1.set_ylabel('Axial Dimension (mm)',fontsize = 16)
     ax1.set_title('Dimple Removed, 10th Order\nLegendre Fit To Slumped Data',fontsize = 16)
-    
+
     inner_region = stripWithShade(slump_data,shademask)
-    
+
     divider = make_axes_locatable(ax1)
     cax1 = divider.append_axes("right", size="5%", pad=0.10)
     cbar = plt.colorbar(im, cax = cax1)
     cbar.set_label('Figure (microns)')
-    
+
     ax1.add_patch(patches.Rectangle((-35.05,-35.05),70.1,70.1,fill = False))
     ax1.text(0.05,0.05,'PV: ' + "{:3.1f}".format(pv(slump_data)) + ' um',ha = 'left',transform = ax1.transAxes,fontsize = 16)
     ax1.text(0.05,0.08,'RMS: ' + "{:3.1f}".format(nanstd(slump_data)) + ' um',ha = 'left',transform = ax1.transAxes,fontsize = 16)
     ax1.text(-32,-32,'PV: ' + "{:3.1f}".format(pv(inner_region)) + ' um',ha = 'left',fontsize = 16)
     ax1.text(-32,-29,'RMS: ' + "{:3.1f}".format(nanstd(inner_region)) + ' um',ha = 'left',fontsize = 16)
-    
+
 def plot_bffc_map(bffc):
     fig = plt.figure(figsize = (10,10))
     ax1 = fig.add_subplot(111)
@@ -401,12 +404,12 @@ def plot_bffc_map(bffc):
     ax1.set_xlabel('Azimuthal Dimension (mm)',fontsize = 16)
     ax1.set_ylabel('Axial Dimension (mm)',fontsize = 16)
     ax1.set_title('Theoretical Best Fit Figure Change\nTo Correct Slumped Mirror Data',fontsize = 16)
-    
+
     divider = make_axes_locatable(ax1)
     cax1 = divider.append_axes("right", size="5%", pad=0.10)
     cbar = plt.colorbar(im, cax = cax1)
     cbar.set_label('Figure (microns)')
-    
+
     ax1.add_patch(patches.Rectangle((-35.05,-35.05),70.1,70.1,fill = False))
     ax1.text(0.05,0.05,'PV: ' + "{:3.1f}".format(pv(bffc)) + ' um',ha = 'left',transform = ax1.transAxes,fontsize = 16)
     ax1.text(0.05,0.08,'RMS: ' + "{:3.1f}".format(nanstd(bffc)) + ' um',ha = 'left',transform = ax1.transAxes,fontsize = 16)
@@ -428,16 +431,16 @@ def plot_computed_correction(input_dist,comp_corr,dx,shade,first_title = '',seco
     plot_dist = stripWithShade(input_dist,corr_shade)
 
     extent = [-shape(plot_corr)[0]/2*dx,shape(plot_corr)[0]/2*dx,-shape(plot_corr)[0]/2*dx,shape(plot_corr)[0]/2*dx]
-    
+
     if shape(plot_dist) != shape(plot_corr):
-        print "Something's fucked here, mate"
+        print("Something's fucked here, mate")
         pdb.set_trace()
-    
-    if vbounds == None:    
+
+    if vbounds == None:
         vmin,vmax = nanmin([plot_dist,plot_corr,plot_dist + plot_corr]),nanmax([plot_dist,plot_corr,plot_dist + plot_corr])
     else:
         [vmin,vmax] = vbounds
-    
+
     im = ax1.imshow(plot_dist,extent = extent,vmin = vmin,vmax = vmax)
     ax1.set_xlabel('Azimuthal Dimension (mm)')
     ax1.set_ylabel('Axial Dimension (mm)')
@@ -446,7 +449,7 @@ def plot_computed_correction(input_dist,comp_corr,dx,shade,first_title = '',seco
     cax1 = divider.append_axes("right", size="5%", pad=0.10)
     cbar1 = plt.colorbar(im, cax = cax1)
     cbar1.set_label(cbar_label)
-    
+
     ax2.imshow(plot_corr,extent = extent,vmin = vmin,vmax = vmax)
     ax2.set_xlabel('Azimuthal Dimension (mm)')
     ax2.set_ylabel('Axial Dimension (mm)')
@@ -455,7 +458,7 @@ def plot_computed_correction(input_dist,comp_corr,dx,shade,first_title = '',seco
     cax2 = divider.append_axes("right", size="5%", pad=0.10)
     cbar2 = plt.colorbar(im, cax = cax2)
     cbar2.set_label(cbar_label)
-    
+
     ax3.imshow(plot_dist + plot_corr,extent = extent,vmin = vmin,vmax = vmax)
     ax3.set_xlabel('Azimuthal Dimension (mm)')
     ax3.set_ylabel('Axial Dimension (mm)')
@@ -464,27 +467,27 @@ def plot_computed_correction(input_dist,comp_corr,dx,shade,first_title = '',seco
     cax3 = divider.append_axes("right", size="5%", pad=0.10)
     cbar3 = plt.colorbar(im, cax = cax3)
     cbar3.set_label(cbar_label)
-    
+
     fig.subplots_adjust(top = 0.83,hspace = 0.5,wspace = 1.5)
-    
+
     plt.suptitle(global_title,fontsize = 20)
-    
+
     if est_perf == True:
-        print 'Computing performance for plotting... Be patient!'
+        print('Computing performance for plotting... Be patient!')
         dist_merit = eva.computeMeritFunctions(plot_dist,[dx])
         corr_merit = eva.computeMeritFunctions(plot_dist + plot_corr,[dx])
-        
+
         ax1.text(0.05,0.05,'PSF RMS: ' + "{:4.1f}".format(dist_merit[0]) + ' asec.',ha = 'left',transform = ax1.transAxes)
         ax1.text(0.05,0.10,'PSF HPD: ' + "{:3.1f}".format(dist_merit[1]) + ' asec.',ha = 'left',transform = ax1.transAxes)
         ax3.text(0.05,0.05,'PSF RMS: ' + "{:4.1f}".format(corr_merit[0]) + ' asec.',ha = 'left',transform = ax3.transAxes)
         ax3.text(0.05,0.10,'PSF HPD: ' + "{:3.1f}".format(corr_merit[1]) + ' asec.',ha = 'left',transform = ax3.transAxes)
-        
+
     elif logical_and(dist_merit is not None,corr_merit is not None):
         ax1.text(0.05,0.05,'PSF RMS: ' + "{:4.1f}".format(dist_merit[0]) + ' asec.',ha = 'left',transform = ax1.transAxes)
         ax1.text(0.05,0.10,'PSF HPD: ' + "{:3.1f}".format(dist_merit[1]) + ' asec.',ha = 'left',transform = ax1.transAxes)
         ax3.text(0.05,0.05,'PSF RMS: ' + "{:4.1f}".format(corr_merit[0]) + ' asec.',ha = 'left',transform = ax3.transAxes)
         ax3.text(0.05,0.10,'PSF HPD: ' + "{:3.1f}".format(corr_merit[1]) + ' asec.',ha = 'left',transform = ax3.transAxes)
-        
+
     if save_file != None:
         plt.savefig(save_file)
     return fig,(ax1,ax2,ax3)
@@ -506,16 +509,16 @@ def plot_computed_correction_inline(input_dist,fc,cor,dx,shade,first_title = '',
     plot_dist = stripWithShade(input_dist,corr_shade)
 
     extent = [-shape(plot_corr)[0]/2*dx,shape(plot_corr)[0]/2*dx,-shape(plot_corr)[0]/2*dx,shape(plot_corr)[0]/2*dx]
-    
+
     if shape(plot_dist) != shape(plot_corr):
-        print "Something's fucked here, mate"
+        print("Something's fucked here, mate")
         pdb.set_trace()
-    
-    if vbounds == None:    
+
+    if vbounds == None:
         vmin,vmax = nanmin([plot_dist,plot_corr,plot_dist + plot_corr]),nanmax([plot_dist,plot_corr,plot_dist + plot_corr])
     else:
         [vmin,vmax] = vbounds
-    
+
     im = ax1.imshow(plot_dist,extent = extent,vmin = vmin,vmax = vmax)
     ax1.set_xlabel('Azimuthal Dimension (mm)')
     ax1.set_ylabel('Axial Dimension (mm)')
@@ -524,7 +527,7 @@ def plot_computed_correction_inline(input_dist,fc,cor,dx,shade,first_title = '',
     cax1 = divider.append_axes("right", size="5%", pad=0.10)
     cbar1 = plt.colorbar(im, cax = cax1)
     cbar1.set_label(cbar_label)
-    
+
     ax2.imshow(plot_corr,extent = extent,vmin = vmin,vmax = vmax)
     ax2.set_xlabel('Azimuthal Dimension (mm)')
     ax2.set_ylabel('Axial Dimension (mm)')
@@ -533,7 +536,7 @@ def plot_computed_correction_inline(input_dist,fc,cor,dx,shade,first_title = '',
     cax2 = divider.append_axes("right", size="5%", pad=0.10)
     cbar2 = plt.colorbar(im, cax = cax2)
     cbar2.set_label(cbar_label)
-    
+
     ax3.imshow(plot_dist + plot_corr,extent = extent,vmin = vmin,vmax = vmax)
     ax3.set_xlabel('Azimuthal Dimension (mm)')
     ax3.set_ylabel('Axial Dimension (mm)')
@@ -542,27 +545,27 @@ def plot_computed_correction_inline(input_dist,fc,cor,dx,shade,first_title = '',
     cax3 = divider.append_axes("right", size="5%", pad=0.10)
     cbar3 = plt.colorbar(im, cax = cax3)
     cbar3.set_label(cbar_label)
-    
+
     fig.subplots_adjust(top = 0.7,hspace = 0.05,wspace = 0.6)
-    
+
     plt.suptitle(global_title,fontsize = 20)
-    
+
     if est_perf == True:
-        print 'Computing performance for plotting... Be patient!'
+        print('Computing performance for plotting... Be patient!')
         dist_merit = eva.computeMeritFunctions(plot_dist,[dx])
         corr_merit = eva.computeMeritFunctions(plot_dist + plot_corr,[dx])
-        
+
         ax1.text(0.05,0.05,'PSF RMS: ' + "{:4.1f}".format(dist_merit[0]) + ' asec.',ha = 'left',transform = ax1.transAxes)
         ax1.text(0.05,0.10,'PSF HPD: ' + "{:3.1f}".format(dist_merit[1]) + ' asec.',ha = 'left',transform = ax1.transAxes)
         ax3.text(0.05,0.05,'PSF RMS: ' + "{:4.1f}".format(corr_merit[0]) + ' asec.',ha = 'left',transform = ax3.transAxes)
         ax3.text(0.05,0.10,'PSF HPD: ' + "{:3.1f}".format(corr_merit[1]) + ' asec.',ha = 'left',transform = ax3.transAxes)
-        
+
     elif logical_and(dist_merit is not None,corr_merit is not None):
         ax1.text(0.05,0.05,'PSF RMS: ' + "{:4.1f}".format(dist_merit[0]) + ' asec.',ha = 'left',transform = ax1.transAxes)
         ax1.text(0.05,0.10,'PSF HPD: ' + "{:3.1f}".format(dist_merit[1]) + ' asec.',ha = 'left',transform = ax1.transAxes)
         ax3.text(0.05,0.05,'PSF RMS: ' + "{:4.1f}".format(corr_merit[0]) + ' asec.',ha = 'left',transform = ax3.transAxes)
         ax3.text(0.05,0.10,'PSF HPD: ' + "{:3.1f}".format(corr_merit[1]) + ' asec.',ha = 'left',transform = ax3.transAxes)
-        
+
     if save_file != None:
         plt.savefig(save_file)
     return fig,(ax1,ax2,ax3)
@@ -582,13 +585,13 @@ def plot_measured_correction(input_dist,theo_corr,meas_corr,dx,first_title = '',
     plot_dist = man.stripnans(input_dist - nanmean(input_dist))
     plot_theo_corr = man.newGridSize(man.stripnans(theo_corr - nanmean(theo_corr)),shape(plot_dist))
     plot_meas_corr = man.newGridSize(man.stripnans(meas_corr - nanmean(meas_corr)),shape(plot_dist))
-    
+
     extent = [-shape(plot_theo_corr)[0]/2*dx,shape(plot_theo_corr)[0]/2*dx,-shape(plot_theo_corr)[0]/2*dx,shape(plot_theo_corr)[0]/2*dx]
-    if vbounds == None:    
+    if vbounds == None:
         vmin,vmax = nanmin([plot_dist,plot_theo_corr,plot_meas_corr,plot_dist + plot_meas_corr]),nanmax([plot_dist,plot_theo_corr,plot_meas_corr,plot_dist + plot_meas_corr])
     else:
         [vmin,vmax] = vbounds
-    
+
     im = ax1.imshow(plot_dist,extent = extent,vmin = vmin,vmax = vmax)
     ax1.set_xlabel('Azimuthal Dimension (mm)')
     ax1.set_ylabel('Axial Dimension (mm)')
@@ -597,7 +600,7 @@ def plot_measured_correction(input_dist,theo_corr,meas_corr,dx,first_title = '',
     cax1 = divider.append_axes("right", size="5%", pad=0.10)
     cbar1 = plt.colorbar(im, cax = cax1)
     cbar1.set_label(cbar_label)
-    
+
     ax2.imshow(plot_theo_corr,extent = extent,vmin = vmin,vmax = vmax)
     ax2.set_xlabel('Azimuthal Dimension (mm)')
     ax2.set_ylabel('Axial Dimension (mm)')
@@ -606,7 +609,7 @@ def plot_measured_correction(input_dist,theo_corr,meas_corr,dx,first_title = '',
     cax2 = divider.append_axes("right", size="5%", pad=0.10)
     cbar2 = plt.colorbar(im, cax = cax2)
     cbar2.set_label(cbar_label)
-    
+
     ax3.imshow(plot_meas_corr,extent = extent,vmin = vmin,vmax = vmax)
     ax3.set_xlabel('Azimuthal Dimension (mm)')
     ax3.set_ylabel('Axial Dimension (mm)')
@@ -615,7 +618,7 @@ def plot_measured_correction(input_dist,theo_corr,meas_corr,dx,first_title = '',
     cax3 = divider.append_axes("right", size="5%", pad=0.10)
     cbar3 = plt.colorbar(im, cax = cax3)
     cbar3.set_label(cbar_label)
-    
+
     ax4.imshow(plot_meas_corr + plot_dist,extent = extent,vmin = vmin,vmax = vmax)
     ax4.set_xlabel('Azimuthal Dimension (mm)')
     ax4.set_ylabel('Axial Dimension (mm)')
@@ -624,16 +627,16 @@ def plot_measured_correction(input_dist,theo_corr,meas_corr,dx,first_title = '',
     cax4 = divider.append_axes("right", size="5%", pad=0.10)
     cbar4 = plt.colorbar(im, cax = cax4)
     cbar4.set_label(cbar_label)
-    
+
     fig.subplots_adjust(top = 0.85,hspace = 0.4,wspace = 0.4)
-    
+
     plt.suptitle(global_title,fontsize = 20)
-    
+
     if est_perf == True:
-        print 'Computing performance for plotting... Be patient!'
+        print('Computing performance for plotting... Be patient!')
         dist_merit = eva.computeMeritFunctions(plot_dist,[dx])
         corr_merit = eva.computeMeritFunctions(plot_dist + plot_meas_corr,[dx])
-        
+
         ax1.text(0.05,0.05,'PSF RMS: ' + "{:4.1f}".format(dist_merit[0]) + ' asec.',ha = 'left',transform = ax1.transAxes)
         ax1.text(0.05,0.10,'PSF HPD: ' + "{:3.1f}".format(dist_merit[1]) + ' asec.',ha = 'left',transform = ax1.transAxes)
         ax4.text(0.05,0.05,'PSF RMS: ' + "{:4.1f}".format(meas_corr_merit[0]) + ' asec.',ha = 'left',transform = ax4.transAxes)
@@ -655,10 +658,10 @@ def plot_measured_correction_for_iteration(fig,input_dist,theo_corr,meas_corr,dx
     plot_dist = man.stripnans(input_dist - nanmean(input_dist))
     plot_theo_corr = man.newGridSize(man.stripnans(theo_corr - nanmean(theo_corr)),shape(plot_dist))
     plot_meas_corr = man.newGridSize(man.stripnans(meas_corr - nanmean(meas_corr)),shape(plot_dist))
-    
+
     extent = [-shape(plot_theo_corr)[0]/2*dx,shape(plot_theo_corr)[0]/2*dx,-shape(plot_theo_corr)[0]/2*dx,shape(plot_theo_corr)[0]/2*dx]
-    
-    if vbounds == None:    
+
+    if vbounds == None:
         vmin,vmax = nanmin([plot_dist,plot_corr,plot_dist + plot_corr]),nanmax([plot_dist,plot_corr,plot_dist + plot_corr])
     else:
         [vmin,vmax] = vbounds
@@ -671,7 +674,7 @@ def plot_measured_correction_for_iteration(fig,input_dist,theo_corr,meas_corr,dx
     cax1 = divider.append_axes("right", size="5%", pad=0.10)
     cbar1 = plt.colorbar(im, cax = cax1)
     cbar1.set_label(cbar_label)
-    
+
     ax2.imshow(plot_theo_corr,extent = extent,vmin = vmin,vmax = vmax)
     ax2.set_xlabel('Azimuthal Dimension (mm)')
     ax2.set_ylabel('Axial Dimension (mm)')
@@ -680,7 +683,7 @@ def plot_measured_correction_for_iteration(fig,input_dist,theo_corr,meas_corr,dx
     cax2 = divider.append_axes("right", size="5%", pad=0.10)
     cbar2 = plt.colorbar(im, cax = cax2)
     cbar2.set_label(cbar_label)
-    
+
     ax3.imshow(plot_meas_corr,extent = extent,vmin = vmin,vmax = vmax)
     ax3.set_xlabel('Azimuthal Dimension (mm)')
     ax3.set_ylabel('Axial Dimension (mm)')
@@ -689,7 +692,7 @@ def plot_measured_correction_for_iteration(fig,input_dist,theo_corr,meas_corr,dx
     cax3 = divider.append_axes("right", size="5%", pad=0.10)
     cbar3 = plt.colorbar(im, cax = cax3)
     cbar3.set_label(cbar_label)
-    
+
     ax4.imshow(plot_meas_corr + plot_dist,extent = extent,vmin = vmin,vmax = vmax)
     ax4.set_xlabel('Azimuthal Dimension (mm)')
     ax4.set_ylabel('Axial Dimension (mm)')
@@ -698,11 +701,11 @@ def plot_measured_correction_for_iteration(fig,input_dist,theo_corr,meas_corr,dx
     cax4 = divider.append_axes("right", size="5%", pad=0.10)
     cbar4 = plt.colorbar(im, cax = cax4)
     cbar4.set_label(cbar_label)
-    
+
     fig.subplots_adjust(top = 0.9,hspace = 0.4,wspace = 0.4)
-    
+
     plt.suptitle(global_title,fontsize = 20)
-    
+
     if est_perf == True:
         ax1.text(0.05,0.05,'PSF RMS: ' + "{:4.1f}".format(dist_merit[0]) + ' asec.',ha = 'left',transform = ax1.transAxes)
         ax1.text(0.05,0.10,'PSF HPD: ' + "{:3.1f}".format(dist_merit[1]) + ' asec.',ha = 'left',transform = ax1.transAxes)
@@ -727,16 +730,16 @@ def plot_computed_correction_trifig_inline(input_dist,fc,cor,dx,first_title = ''
     plot_dist,plot_fc,plot_cor = input_dist,fc,cor
 
     extent = [-shape(plot_dist)[1]/2*dx,shape(plot_dist)[1]/2*dx,-shape(plot_dist)[0]/2*dx,shape(plot_dist)[0]/2*dx]
-    
+
     if (shape(plot_dist) != shape(plot_cor)) | (shape(plot_dist) != shape(plot_fc)):
-        print "Something's fucked here, mate"
+        print("Something's fucked here, mate")
         pdb.set_trace()
-    
-    if vbounds == None:    
+
+    if vbounds == None:
         vmin,vmax = nanmin([plot_dist,plot_fc,plot_cor]),nanmax([plot_dist,plot_fc,plot_cor])
     else:
         [vmin,vmax] = vbounds
-    
+
     im = ax1.imshow(plot_dist,extent = extent,vmin = vmin,vmax = vmax)
     ax1.set_xlabel('Azimuthal Dimension (mm)')
     ax1.set_ylabel('Axial Dimension (mm)')
@@ -745,7 +748,7 @@ def plot_computed_correction_trifig_inline(input_dist,fc,cor,dx,first_title = ''
     cax1 = divider.append_axes("right", size="5%", pad=0.10)
     cbar1 = plt.colorbar(im, cax = cax1)
     cbar1.set_label(cbar_label)
-    
+
     ax2.imshow(plot_fc,extent = extent,vmin = vmin,vmax = vmax)
     ax2.set_xlabel('Azimuthal Dimension (mm)')
     ax2.set_ylabel('Axial Dimension (mm)')
@@ -754,7 +757,7 @@ def plot_computed_correction_trifig_inline(input_dist,fc,cor,dx,first_title = ''
     cax2 = divider.append_axes("right", size="5%", pad=0.10)
     cbar2 = plt.colorbar(im, cax = cax2)
     cbar2.set_label(cbar_label)
-    
+
     ax3.imshow(plot_cor,extent = extent,vmin = vmin,vmax = vmax)
     ax3.set_xlabel('Azimuthal Dimension (mm)')
     ax3.set_ylabel('Axial Dimension (mm)')
@@ -763,11 +766,11 @@ def plot_computed_correction_trifig_inline(input_dist,fc,cor,dx,first_title = ''
     cax3 = divider.append_axes("right", size="5%", pad=0.10)
     cbar3 = plt.colorbar(im, cax = cax3)
     cbar3.set_label(cbar_label)
-    
+
     fig.subplots_adjust(top = 0.7,hspace = 0.05,wspace = 0.6)
-    
+
     plt.suptitle(global_title,fontsize = 20)
-    
+
     #if est_perf == True:
     #    if logical_and(dist_merit is None,cor_merit is None):
     #        dist_merit = eva.computeMeritFunctions(plot_dist,[dx])
@@ -781,7 +784,7 @@ def plot_computed_correction_trifig_inline(input_dist,fc,cor,dx,first_title = ''
     if cor_merit is not None:
         ax3.text(0.05,0.05,'PSF RMS: ' + "{:5.2f}".format(cor_merit[0]) + ' asec.',ha = 'left',transform = ax3.transAxes)
         ax3.text(0.05,0.10,'PSF HPD: ' + "{:4.2f}".format(cor_merit[1]) + ' asec.',ha = 'left',transform = ax3.transAxes)
-        
+
     if save_file != None:
         plt.savefig(save_file)
     return fig,(ax1,ax2,ax3)
@@ -799,16 +802,16 @@ def plot_computed_corrections_trifig_inline_slopes(input_dist,fc,cor,dx,first_ti
     plot_dist,plot_fc,plot_cor = input_dist,fc,cor
 
     extent = [-shape(plot_dist)[0]/2*dx,shape(plot_dist)[0]/2*dx,-shape(plot_dist)[0]/2*dx,shape(plot_dist)[0]/2*dx]
-    
+
     if (shape(plot_dist) != shape(plot_cor)) | (shape(plot_dist) != shape(plot_fc)):
-        print "Something's fucked here, mate"
+        print("Something's fucked here, mate")
         pdb.set_trace()
-    
-    if vbounds == None:    
+
+    if vbounds == None:
         vmin,vmax = nanmin([plot_dist,plot_fc,plot_cor]),nanmax([plot_dist,plot_fc,plot_cor])
     else:
         [vmin,vmax] = vbounds
-    
+
     im = ax1.imshow(plot_dist,extent = extent,vmin = vmin,vmax = vmax)
     ax1.set_xlabel('Azimuthal Dimension (mm)')
     ax1.set_ylabel('Axial Dimension (mm)')
@@ -817,7 +820,7 @@ def plot_computed_corrections_trifig_inline_slopes(input_dist,fc,cor,dx,first_ti
     cax1 = divider.append_axes("right", size="5%", pad=0.10)
     cbar1 = plt.colorbar(im, cax = cax1)
     cbar1.set_label(cbar_label)
-    
+
     ax2.imshow(plot_fc,extent = extent,vmin = vmin,vmax = vmax)
     ax2.set_xlabel('Azimuthal Dimension (mm)')
     ax2.set_ylabel('Axial Dimension (mm)')
@@ -826,7 +829,7 @@ def plot_computed_corrections_trifig_inline_slopes(input_dist,fc,cor,dx,first_ti
     cax2 = divider.append_axes("right", size="5%", pad=0.10)
     cbar2 = plt.colorbar(im, cax = cax2)
     cbar2.set_label(cbar_label)
-    
+
     ax3.imshow(plot_cor,extent = extent,vmin = vmin,vmax = vmax)
     ax3.set_xlabel('Azimuthal Dimension (mm)')
     ax3.set_ylabel('Axial Dimension (mm)')
@@ -835,16 +838,16 @@ def plot_computed_corrections_trifig_inline_slopes(input_dist,fc,cor,dx,first_ti
     cax3 = divider.append_axes("right", size="5%", pad=0.10)
     cbar3 = plt.colorbar(im, cax = cax3)
     cbar3.set_label(cbar_label)
-    
+
     fig.subplots_adjust(top = 0.7,hspace = 0.05,wspace = 0.6)
-    
+
     plt.suptitle(global_title,fontsize = 20)
-    
+
     if est_perf == True:
         ax1.text(0.05,0.05,'RMS Ax. Slope: ' + "{:5.2f}".format(nanstd(plot_dist)) + ' asec.',ha = 'left',transform = ax1.transAxes)
         ax2.text(0.05,0.05,'RMS Ax. Slope: ' + "{:5.2f}".format(nanstd(plot_fc)) + ' asec.',ha = 'left',transform = ax2.transAxes)
         ax3.text(0.05,0.05,'RMS Ax. Slope: ' + "{:5.2f}".format(nanstd(plot_cor)) + ' asec.',ha = 'left',transform = ax3.transAxes)
-        
+
     if save_file != None:
         plt.savefig(save_file)
     return fig,(ax1,ax2,ax3)

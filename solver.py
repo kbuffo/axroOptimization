@@ -6,6 +6,8 @@ import scipy.interpolate as interp
 import utilities.transformations as tr
 
 #from axroOptimization.matlab_funcs import matlab_lsqlin_optimization
+def printer():
+    print('Hello solver!')
 
 def ampMeritFunction(voltages,distortion,ifuncs):
     """Simple merit function calculator.
@@ -116,7 +118,7 @@ def prepareDist(d,dx=None,azweight=0.015,avg_slope_remove = True):
         d[0] = d[0] - np.nanmean(d[0])*avg_slope_remove
         d[1] = d[1] - np.nanmean(d[1])*avg_slope_remove
         d[1] = d[1]*azweight
-        
+
     return d.flatten()
 
 def optimizer(distortion,ifs,shade,smin=0.,smax=5.,bounds=None,matlab_opt = False):
@@ -143,23 +145,23 @@ def optimizer(distortion,ifs,shade,smin=0.,smax=5.,bounds=None,matlab_opt = Fals
         ifs = np.vstack((ifs[:len(shade)][shade==1],ifs[len(shade):][shade==1]))
         distortion = np.concatenate((distortion[:len(shade)][shade==1],distortion[len(shade):][shade==1]))
     else:
-        print 'Distortion not an expected length relative to the shade -- investigation needed.'
+        print('Distortion not an expected length relative to the shade -- investigation needed.')
         pdb.set_trace()
 
     #Remove nans
     ind = ~np.isnan(distortion)
     ifs = ifs[ind]
     distortion = distortion[ind]
-    
+
     #Handle bounds
     if bounds is None:
         bounds = []
         for i in range(np.shape(ifs)[1]):
             bounds.append((smin,smax))
-    
+
     #np.savetxt('ifs.txt',ifs)
     #np.savetxt('dist.txt',distortion)
-    
+
     if matlab_opt is True:
         optv = matlab_lsqlin_optimization(ifs,distortion,bounds)
 
@@ -182,7 +184,7 @@ def correctDistortion(dist,ifs,shade,dx=None,azweight=.015,smax=5.,\
     """
     #Make sure shapes are correct
     if not (np.shape(dist)==np.shape(ifs[0])==np.shape(shade)):
-        print 'Unequal shapes!'
+        print('Unequal shapes!')
         return None
 
     #Prepare arrays
@@ -240,8 +242,8 @@ def convertFEAInfluence(filename,Nx,Ny,method='cubic',\
     g = interp.griddata((z,t),r,(gy,gx),method=method)
     g[np.isnan(g)] = 0.
 
-    print filename + ' done'
-    
+    print(filename + ' done')
+
     return -(g0[1:-1,1:-1]-g[1:-1,1:-1]),g0[1:-1,1:-1],g[1:-1,1:-1]
 
 def createShadePerimeter(sh,axialFraction=0.,azFraction=0.):

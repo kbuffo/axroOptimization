@@ -7,6 +7,9 @@ import axroOptimization.conicsolve as conic
 
 import pdb
 
+def printer():
+    print('Hello evaluate mirrors!')
+
 def correctXrayTestMirror(d,ifs,shade=None,dx=None,azweight=.015,smax=5.,\
                           bounds=None,regrid_figure_change = False,avg_slope_remove = True,\
                           matlab_opt = False):
@@ -31,7 +34,7 @@ def correctXrayTestMirror(d,ifs,shade=None,dx=None,azweight=.015,smax=5.,\
     # data to yield the final corrected figure.
     ifs2 = ifs.transpose(1,2,0)
     cor2 = np.dot(ifs2,volt)
-    
+
     if regrid_figure_change == True:
         cor3 = man.newGridSize(cor2,np.shape(d),method='linear')
         #Handle shademask
@@ -43,7 +46,7 @@ def correctXrayTestMirror(d,ifs,shade=None,dx=None,azweight=.015,smax=5.,\
         #Handle shademask
         cor2[shade==0] = np.nan
         fc = cor2
-        
+
     return fc,volt
 
 def computeMeritFunctions(d,dx,x0=np.linspace(-1.,1.,10001),\
@@ -56,7 +59,7 @@ def computeMeritFunctions(d,dx,x0=np.linspace(-1.,1.,10001),\
     """
     #Remove NaNs
     d = man.stripnans(d)
-        
+
     #Compute PSF
     primfoc = conic.primfocus(R0,Z0)
     dx2 = x0[1]-x0[0]
@@ -64,13 +67,13 @@ def computeMeritFunctions(d,dx,x0=np.linspace(-1.,1.,10001),\
 
     #Make sure over 95% of flux falls in detector
     integral = np.sum(resa)*dx2
-    
+
     if integral < .95:
-        print 'Possible sampling problem'
-        print str(np.sum(resa)*dx2)
+        print('Possible sampling problem')
+        print(str(np.sum(resa)*dx2))
     if integral > 1.5:
-        print 'Possible aliasing problem'
-        print str(np.sum(resa)*dx2)
+        print('Possible aliasing problem')
+        print(str(np.sum(resa)*dx2))
 
     #Normalize the integral to account for some flux
     #scattered beyond the detector
@@ -78,19 +81,19 @@ def computeMeritFunctions(d,dx,x0=np.linspace(-1.,1.,10001),\
         resa = resa/integral
 
     cdf = np.cumsum(resa)*dx2
-        
+
     #Compute PSF merit functions
-    # Computing the rms rigorously, but not usefully. 
+    # Computing the rms rigorously, but not usefully.
     #rmsPSF = np.sqrt(np.sum(resa*x0**2)*dx2-(np.sum(resa*x0)*dx2)**2)
     # Computing the rms by assuming a Gaussian profile.
     rmsPSF = x0[np.argmin(np.abs(cdf-.84))]-\
              x0[np.argmin(np.abs(cdf-.16))]
     hpdPSF = x0[np.argmin(np.abs(cdf-.75))]-\
              x0[np.argmin(np.abs(cdf-.25))]
-    
+
     return rmsPSF/primfoc*180/np.pi*60**2,hpdPSF/primfoc*180/np.pi*60**2,\
            [x0,resa]
-        
+
 def correctHFDFC3(d,ifs,shade=None,dx=None,azweight=.015,smax=5.,\
                           bounds=None):
     """
@@ -110,7 +113,7 @@ def correctHFDFC3(d,ifs,shade=None,dx=None,azweight=.015,smax=5.,\
     volt = slv.correctDistortion(d2,ifs,shade,\
                                             dx=dx,azweight=azweight,\
                                             smax=smax,bounds=bounds)
-    
+
     #Add correction to original data
     ifs2 = ifs.transpose(1,2,0)
     cor2 = np.dot(ifs2,volt)
@@ -119,7 +122,7 @@ def correctHFDFC3(d,ifs,shade=None,dx=None,azweight=.015,smax=5.,\
     cor3 = man.newGridSize(cor2,np.shape(d),method='linear')
 
     return cor3,volt
-        
+
 #def correctForCTF(d,ifs,shade=None,dx=None,azweight=.015,smax=1.0,\
 #                          bounds=None,avg_slope_remove = True):
 #    """
@@ -145,7 +148,5 @@ def correctHFDFC3(d,ifs,shade=None,dx=None,azweight=.015,smax=5.,\
 #    cor2 = np.dot(ifs2,volt)
 #    #Handle shademask
 #    cor2[shade==0] = np.nan
-#    
+#
 #    return cor2,volt
-
-
