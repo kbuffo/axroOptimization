@@ -170,7 +170,7 @@ def optimizer(distortion,ifs,shade,smin=0.,smax=5.,bounds=None,matlab_opt = Fals
         optv = fmin_slsqp(ampMeritFunction,np.zeros(np.shape(ifs)[1]),\
                           bounds=bounds,args=(distortion,ifs),\
                           iprint=2,fprime=ampMeritDerivative,iter=1000,\
-                          acc=1.e-10)
+                          acc=1.e-10, disp=False)
     return optv
 
 def correctDistortion(dist,ifs,shade,dx=None,azweight=.015,smax=5.,\
@@ -252,6 +252,17 @@ def createShadePerimeter(sh,axialFraction=0.,azFraction=0.):
     azimuthal perimeter is blocked.
     Fraction is the fraction of blockage in each axis.
     sh is shape tuple e.g. (200,200)
+
+    First create an array of zeros with the same shape as the
+    one supplied.
+    Take the number of pixels in a given dimension, multiply
+    by how many the fraction supplied to get how many pixels
+    will remain in the image.
+    The number of pixels remaining is divided by 2 for ease of
+    indexing.
+    Round the number of pixels remaining to the nearest integer,
+    and fill the zero array with 1's in the positions where pixels
+    are kept.
     """
     arr = np.zeros(sh)
     axIndex = int(round(sh[0]*axialFraction/2))

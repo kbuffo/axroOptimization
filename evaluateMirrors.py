@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import scattering as scat
+import axroOptimization.scattering as scat
 import utilities.imaging.man as man
 import axroOptimization.solver as slv
 import axroOptimization.conicsolve as conic
@@ -44,7 +44,7 @@ def correctXrayTestMirror(d,ifs,shade=None,dx=None,azweight=.015,smax=5.,\
         fc = cor3
     else:
         #Handle shademask
-        cor2[shade==0] = np.nan
+        # cor2[shade==0] = np.nan
         fc = cor2
 
     return fc,volt
@@ -61,7 +61,8 @@ def computeMeritFunctions(d,dx,x0=np.linspace(-1.,1.,10001),\
     d = man.stripnans(d)
 
     #Compute PSF
-    primfoc = conic.primfocus(R0,Z0)
+    primfoc = conic.primfocus(R0,Z0) # distance to primary focus
+    print('Distance to primary focus:', primfoc)
     dx2 = x0[1]-x0[0]
     resa = scat.primary2DPSF(d,dx[0],R0 = R0,Z0 = Z0,x0=x0,wave = wave)
 

@@ -34,6 +34,10 @@ def convertToAxialSlopes(img,dx):
     return gradient(img,dx)[0]*3600*180/pi
 
 def stripWithShade(dist,shade):
+    """
+    Strip shaded region from image, by inputting
+    image (dist) and shademask array (shade).
+    """
     output = copy(dist)
     output = man.newGridSize(dist,shape(shade))
     output[shade == 0] = NaN
@@ -147,7 +151,7 @@ def mirror_subplot(data_img,ax,title,cbar_label,extent = None,vmin = None,vmax =
     data set, plotting axis and title. Options include an extent, vmin/vmax args,
     and adding a merit function to the plot.
     '''
-    im = ax.imshow(data_img,extent = extent,vmin = vmin,vmax = vmax)
+    im = ax.imshow(data_img,extent = extent,vmin = vmin,vmax = vmax, cmap='jet')
     ax.set_xlabel('Azimuthal Dimension (mm)',fontsize = 16)
     ax.set_ylabel('Axial Dimension (mm)',fontsize = 16)
     ax.set_title(title,fontsize = 16)
