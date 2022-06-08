@@ -30,6 +30,10 @@ def printer():
 def pv(img):
     return nanmax(img) - nanmin(img)
 
+def rms(d):
+    """Return the RMS of an image"""
+    return sqrt(nanmean((d-nanmean(d))**2))
+
 def convertToAxialSlopes(img,dx):
     return gradient(img,dx)[0]*3600*180/pi
 
@@ -145,11 +149,12 @@ def evalSlopeImprovement(dist,cor,fig,dx_eff):
 # Plotting functions.
 
 def mirror_subplot(data_img,ax,title,cbar_label,extent = None,vmin = None,vmax = None,draw_cbar = True,merit = None,
-                     merit1_label = 'PSF E68', merit2_label = 'PSF HPD',merit1_unit = 'asec.',merit2_unit = 'asec.'):
+                     merit1_label = 'PSF E68', merit2_label = 'PSF HPD',merit1_unit = 'asec.',merit2_unit = 'asec.', stats=False):
     '''
     The default figure plot style I want to use. Needs a specified input
     data set, plotting axis and title. Options include an extent, vmin/vmax args,
-    and adding a merit function to the plot.
+    and adding a merit function to the plot, and adding rms and peak to valley
+    values for figure plots
     '''
     im = ax.imshow(data_img,extent = extent,vmin = vmin,vmax = vmax, cmap='jet')
     ax.set_xlabel('Azimuthal Dimension (mm)',fontsize = 16)
@@ -165,13 +170,23 @@ def mirror_subplot(data_img,ax,title,cbar_label,extent = None,vmin = None,vmax =
         ax.text(0.05,0.05,merit1_label + ': ' + "{:4.3f}".format(merit[0]) + ' ' + merit1_unit,ha = 'left',transform = ax.transAxes)
         ax.text(0.05,0.10,merit2_label + ': ' + "{:3.3f}".format(merit[1]) + ' ' + merit2_unit,ha = 'left',transform = ax.transAxes)
 
+    if stats:
+        rmsVal = rms(data_img)
+        pvVal = pv(data_img)
+        ylim = ax.get_ylim()[1]
+        xlim = ax.get_xlim()[1]
+        disp_txt = "RMS: {:.2f} um\nPV: {:.1f} um".format(rmsVal, pvVal)
+        ax.text(0.1, 0.1, disp_txt, fontsize=14, transform=ax.transAxes)
+
 def plot_correction_inline(input_dist,fc,cor,dx,first_title = '',second_title = '',third_title = '',
                              cbar_label = '',global_title = '',save_file = None,vbounds = None,dist_merit = None,\
                              fc_merit = None,cor_merit = None,
-                             merit1_label = 'PSF E68', merit2_label = 'PSF HPD',merit1_unit = 'asec.',merit2_unit = 'asec.'):
+                             merit1_label = 'PSF E68', merit2_label = 'PSF HPD',merit1_unit = 'asec.',merit2_unit = 'asec.',
+                             figsize=(18,6), stats=False):
     '''
+    Plot 3 figures side by side. Can pass a list of cbar titles for different plots.
     '''
-    fig = plt.figure(figsize = (18,5))
+    fig = plt.figure(figsize = figsize)
     gs = gridspec.GridSpec(1,3)
     ax1 = fig.add_subplot(gs[0])
     ax2 = fig.add_subplot(gs[1])
@@ -187,10 +202,12 @@ def plot_correction_inline(input_dist,fc,cor,dx,first_title = '',second_title = 
         vmin,vmax = nanmin([plot_dist,plot_fc,plot_cor]),nanmax([plot_dist,plot_fc,plot_cor])
     else:
         [vmin,vmax] = vbounds
+    if type(cbar_label) != list:
+        cbar_label = [cbar_label] * 3
 
-    mirror_subplot(plot_dist,ax1,first_title,cbar_label,extent = extent,vmin = vmin,vmax = vmax, merit = dist_merit,merit1_label = merit1_label, merit2_label = merit2_label,merit1_unit = merit1_unit,merit2_unit = merit2_unit)
-    mirror_subplot(plot_fc,ax2,second_title,cbar_label,extent = extent,vmin = vmin,vmax = vmax, merit = fc_merit,merit1_label = merit1_label, merit2_label = merit2_label,merit1_unit = merit1_unit,merit2_unit = merit2_unit)
-    mirror_subplot(plot_cor,ax3,third_title,cbar_label,extent = extent,vmin = vmin,vmax = vmax, merit = cor_merit,merit1_label = merit1_label, merit2_label = merit2_label,merit1_unit = merit1_unit,merit2_unit = merit2_unit)
+    mirror_subplot(plot_dist,ax1,first_title,cbar_label[0],extent = extent,vmin = vmin,vmax = vmax, merit = dist_merit,merit1_label = merit1_label, merit2_label = merit2_label,merit1_unit = merit1_unit,merit2_unit = merit2_unit, stats=stats)
+    mirror_subplot(plot_fc,ax2,second_title,cbar_label[1],extent = extent,vmin = vmin,vmax = vmax, merit = fc_merit,merit1_label = merit1_label, merit2_label = merit2_label,merit1_unit = merit1_unit,merit2_unit = merit2_unit, stats=stats)
+    mirror_subplot(plot_cor,ax3,third_title,cbar_label[2],extent = extent,vmin = vmin,vmax = vmax, merit = cor_merit,merit1_label = merit1_label, merit2_label = merit2_label,merit1_unit = merit1_unit,merit2_unit = merit2_unit, stats=stats)
 
     fig.subplots_adjust(top = 0.74,hspace = 0.4,wspace = 0.4)
 
@@ -199,7 +216,45 @@ def plot_correction_inline(input_dist,fc,cor,dx,first_title = '',second_title = 
     if save_file != None:
         plt.savefig(save_file)
         plt.close()
-    return plot_dist,plot_fc,plot_cor
+    return fig, plot_dist, plot_fc, plot_cor
+
+def plot_dual_figure(input_dist,fc,dx,first_title = '',second_title = '',
+                             cbar_label = '',global_title = '',save_file = None,vbounds = None,dist_merit = None,\
+                             fc_merit = None,cor_merit = None,
+                             merit1_label = 'PSF E68', merit2_label = 'PSF HPD',merit1_unit = 'asec.',merit2_unit = 'asec.'):
+    '''
+    Plot 2 figures side by side instead of 3. Useful when comparing figure
+    space to slope space plots.
+    '''
+    fig = plt.figure(figsize = (14,5))
+    gs = gridspec.GridSpec(1,2)
+    ax1 = fig.add_subplot(gs[0])
+    ax2 = fig.add_subplot(gs[1])
+
+    plot_dist = man.stripnans(input_dist - nanmean(input_dist))
+    plot_fc = man.newGridSize(man.stripnans(fc - nanmean(fc)),shape(plot_dist))
+
+    extent = [-shape(plot_dist)[0]/2*dx,shape(plot_dist)[0]/2*dx,-shape(plot_dist)[0]/2*dx,shape(plot_dist)[0]/2*dx]
+
+    if vbounds is None:
+        # vmin,vmax = nanmin([plot_dist,plot_fc]),nanmax([plot_dist,plot_fc])
+        vmin,vmax = [nanmin(plot_dist), nanmin(plot_fc)], [nanmax(plot_dist), nanmax(plot_fc)]
+    else:
+        [vmin,vmax] = vbounds
+    if type(cbar_label) != list:
+        cbar_label = [cbar_label] * 2
+
+    mirror_subplot(plot_dist,ax1,first_title,cbar_label[0],extent = extent,vmin = vmin[0],vmax = vmax[0], merit = dist_merit,merit1_label = merit1_label, merit2_label = merit2_label,merit1_unit = merit1_unit,merit2_unit = merit2_unit)
+    mirror_subplot(plot_fc,ax2,second_title,cbar_label[1],extent = extent,vmin = vmin[1],vmax = vmax[1], merit = fc_merit,merit1_label = merit1_label, merit2_label = merit2_label,merit1_unit = merit1_unit,merit2_unit = merit2_unit)
+
+    fig.subplots_adjust(top = 0.8,hspace = 0.4,wspace = 0.4)
+
+    plt.suptitle(global_title,fontsize = 20)
+
+    if save_file != None:
+        plt.savefig(save_file)
+        plt.close()
+    return fig, plot_dist, plot_fc
 
 def plot_measured_correction_sixfig(input_dist,theo_corr,meas_corr0,meas_corr1,dx,first_title = '',second_title = '',third_title = '',
                                     fourth_title = '',fifth_title = '',sixth_title = '', cbar_label = '',global_title = '',save_file = None,
