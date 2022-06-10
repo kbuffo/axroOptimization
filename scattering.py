@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import pdb
 from axroOptimization.conicsolve import primrad,primfocus,woltparam
 import utilities.imaging.man as man
-# import scatter
+# import axroOptimization.scatter as scatter
 
 def printer():
     print('Hello scattering!')
