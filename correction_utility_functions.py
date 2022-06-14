@@ -18,11 +18,12 @@ import utilities.fourier as fourier
 import utilities.imaging.fitting as fit
 
 import axroOptimization.evaluateMirrors as eva
+import axroOptimization.solver as solver
 
 home_directory = os.getcwd()
 
 def printer():
-    print('Hello correlation utilitiy functions!')
+    print('Hello correction utilitiy functions!')
 
 ##########################################################################################################
 # Utility functions.
@@ -46,7 +47,6 @@ def stripWithShade(dist,shade):
     output = man.newGridSize(dist,shape(shade))
     output[shade == 0] = NaN
     return man.stripnans(output)
-
 ##########################################################################################################
 # CTF specific functions
 
