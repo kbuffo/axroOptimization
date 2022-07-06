@@ -10,6 +10,7 @@ plt.rcParams['savefig.facecolor']='white'
 
 import utilities.figure_plotting as fp
 import imaging.man as man
+import imaging.analysis as alsis
 import axroOptimization.evaluateMirrors as eva
 import axroOptimization.solver as solver
 
@@ -105,6 +106,16 @@ def validateIFs(ifs_input, dx, triBounds=[10., 25.], triPlacement='all',
     false_ifs = np.array(false_ifs)
     return true_ifs, false_ifs
 
+def frameIFs(ifs_input, dx, triBounds=None, edgeTrim=None, triPlacement='all',
+            edgePlacement='all', triVal=0., edgeVal=0.):
+    """
+    Combines zeroEdges and zeroCorners
+    """
+    ifs = np.copy(ifs_input)
+    edges_ifs = zeroEdges(ifs, dx, amount=edgeTrim, placement=edgePlacement, setval=edgeVal)
+    frame_ifs = zeroCorners(edges_ifs, dx, bounds=triBounds, placement=triPlacement, setval=triVal)
+    return frame_ifs
+
 def zeroEdges(ifs_input, dx, amount=5., placement='all', setval=0.):
     """
     Applies edges to a set images used to filter out noise in IFs.
@@ -180,7 +191,7 @@ def getMaxInds(ifs):
     srt_maxInds = orientOrigin(maxInds)
     return srt_maxInds
 
-def alignMaxInds(maxInds):
+def alignMaxInds(maxInds, cell_gap):
     """
     Aligns a set of IF maximums to be in grouped columns.
     By specifying cell_gap in pixels, we can align the indicies
@@ -189,7 +200,6 @@ def alignMaxInds(maxInds):
     """
     aligned_maxInds = []
     x0 = maxInds[0][3]
-    cell_gap = 6
     counter = 0
     for i in maxInds:
         xval = i[3]
@@ -208,7 +218,7 @@ def alignMaxInds(maxInds):
     aligned_maxInds = orientOrigin(aligned_maxInds)
     return aligned_maxInds
 
-def orderIFs(input_ifs, dx, triBounds=[10., 25.], edgeTrim=5.0,
+def orderIFs(input_ifs, dx, triBounds=[10., 25.], edgeTrim=5.0, cell_gap=5.0,
                 triPlacement='all', edgePlacement='all'):
     """
     Orders a set of IFs into the standard IF formatted order.
@@ -218,7 +228,9 @@ def orderIFs(input_ifs, dx, triBounds=[10., 25.], edgeTrim=5.0,
     triPlacement: ['tl','tr','br','bl'] or 'all' to specify where triangles are
     placed.
     edgePlacement: ['t', 'b', 'l', 'r'] or 'all' to specify which edges to trim
+    cell_gap: specify the spacing between adjacent cells in mm.
     """
+    cell_gap = int(round(cell_gap/dx))
     ifs = np.copy(input_ifs)
     if triBounds: # zero out corners
         ifs = zeroCorners(input_ifs, dx, bounds=triBounds, placement=triPlacement)
@@ -226,22 +238,25 @@ def orderIFs(input_ifs, dx, triBounds=[10., 25.], edgeTrim=5.0,
         ifs = zeroEdges(ifs, dx, amount=edgeTrim, placement=edgePlacement)
     ifs[ifs<0] = 0 # zero out negativ values
     maxInds = getMaxInds(ifs) # find and sort indicies of max vals for each image
-    maxInds = alignMaxInds(maxInds) # align the indicies of max vals
+    maxInds = alignMaxInds(maxInds, cell_gap) # align the indicies of max vals
     srt_ifs = np.zeros(ifs.shape)
     for i in range(len(maxInds)): # reorder input ifs based on maxInds
         srt_ifs[i] = input_ifs[maxInds[i][0]]
         maxInds[i][0] = i
     return srt_ifs, maxInds # return sorted ifs and max indicies
 
-def matchIFs(input_ifs1, input_ifs2, dx, triBounds=[None, None],
-                edgeTrim=[None, None], triPlacement=['all', 'all'],
-                edgePlacement=['all', 'all'], matchScale=False):
+def matchIFs(input_ifs1, input_ifs2, dx, cell_gap=[5, 3.048],
+                triBounds=[None, None], edgeTrim=[None, None],
+                triPlacement=['all', 'all'], edgePlacement=['all', 'all'],
+                matchScale=False):
     """
     Matches a set of measured IFs to corresponding theoretical IFs.
 
     input_ifs1: set of measured IFs of size (L x M x N)
     input_ifs2: set of theoretical IFs of size (K x M x N), where
                 K >= L
+    cell_gap: [measured, theoretical] gap between cells in mm to fit to gridd
+                of maxInds
     triBounds: [[measured], [theoretical]] bounds to zero out corners
     edgeTrim: [[measured], [theoretical]] bounds to zero out edges
     triPlacement: [[measured], [theoretical]] placements for triangles
@@ -252,24 +267,51 @@ def matchIFs(input_ifs1, input_ifs2, dx, triBounds=[None, None],
     """
 
     # measured ifs
-    ifs1, idx1 = orderIFs(input_ifs1, dx, triBounds=triBounds[0],
-                            edgeTrim=edgeTrim[0], triPlacement=triPlacement[0],
-                            edgePlacement=edgePlacement[0])
+    ifs1, idx1 = orderIFs(input_ifs1, dx, cell_gap=cell_gap[0],
+                            triBounds=triBounds[0], edgeTrim=edgeTrim[0],
+                            triPlacement=triPlacement[0], edgePlacement=edgePlacement[0])
     # theoretical ifs
-    ifs2, idx2 = orderIFs(input_ifs2, dx, triBounds=triBounds[1],
-                            edgeTrim=edgeTrim[1], triPlacement=triPlacement[1],
-                            edgePlacement=edgePlacement[1])
+    ifs2, idx2 = orderIFs(input_ifs2, dx, cell_gap=cell_gap[1],
+                            triBounds=triBounds[1], edgeTrim=edgeTrim[1],
+                            triPlacement=triPlacement[1], edgePlacement=edgePlacement[1])
+
     matching_ifs = np.zeros(input_ifs1.shape)
     matching_idx = []
+    cell_nos = []
     for i in range(len(idx1)):
         max_point = [idx1[i][2], idx1[i][3]]
         matched_idx = find_nearest(idx2, max_point)
+        # print('matching index:', matched_idx)
         matching_ifs[i] = ifs2[matched_idx]
-        matching_idx.append(idx2[matched_idx])
+        cell_nos.append(matched_idx)
+        matching_idx.append(list(idx2[matched_idx][:]))
+        # print(matching_idx, '\n')
+        # print(matching_idx[i])
+        idx2[matched_idx][-2:] = [np.inf, np.inf]
+        # print(idx2[matched_idx])
     if matchScale:
         for i in range(matching_ifs.shape[0]):
             matching_ifs[i] *= idx1[i][1]/matching_idx[i][1]
-    return ifs1, matching_ifs
+    # print(matching_idx)
+    return ifs1, matching_ifs, idx1, matching_idx, cell_nos
+
+def isoIFs(input_ifs, dx, maxInds, setval=np.nan, extent=15):
+    ifs = np.copy(input_ifs)
+    for i in range(ifs.shape[0]):
+        y_ind = maxInds[i][2]
+        x_ind = maxInds[i][3]
+        # print('i:', i, 'y_ind:', y_ind, 'x_ind', x_ind)
+        if y_ind-extent > extent:
+            ifs[i, :y_ind-extent, :] = setval
+        if ifs.shape[1]-y_ind-extent > extent:
+            ifs[i, y_ind+extent:, :] = setval
+        if x_ind-extent > extent:
+            ifs[i, :, :x_ind-extent] = setval
+        if ifs.shape[2]-x_ind-extent > extent:
+            ifs[i, :, x_ind+extent:] = setval
+    ifs = zeroEdges(ifs, dx, amount=3., placement='all', setval=setval)
+    return ifs
+
 
 def displayIFs(ifs, dx, imbounds=None, vbounds=None, colormap='jet',
                 figsize=(8,5), title_fntsz=14, ax_fntsz=12,
@@ -277,7 +319,8 @@ def displayIFs(ifs, dx, imbounds=None, vbounds=None, colormap='jet',
                 x_title='Azimuthal Dimension (mm)',
                 y_title='Axial Dimension (mm)',
                 cbar_title='Figure (microns)',
-                frame_time=500, repeat_bool=False, dispR=False):
+                frame_time=500, repeat_bool=False, dispR=False,
+                cell_nos=None, stats=False):
     """
     Displays set of IFs in a single animation on one figure.
     """
@@ -289,21 +332,36 @@ def displayIFs(ifs, dx, imbounds=None, vbounds=None, colormap='jet',
     extent = fp.mk_extent(ifs[0], dx)
     if not vbounds:
         vbounds = [np.nanmin(ifs), np.nanmax(ifs)]
-    if imbounds:
+    if imbounds and cell_nos:
+        lbnd = cell_nos.index(imbounds[0])
+        ubnd = cell_nos.index(imbounds[1])
+    elif imbounds and not cell_nos:
         lbnd = imbounds[0]
         ubnd = imbounds[1]
     else:
         lbnd = 0
         ubnd = ifs.shape[0]
+    if stats:
+        rmsVals = [alsis.rms(ifs[i]) for i in range(ifs.shape[0])]
+        ptovVals = [alsis.ptov(ifs[i]) for i in range(ifs.shape[0])]
     ims = []
     for i in range(ifs[lbnd:ubnd+1].shape[0]):
         im = ax.imshow(ifs[i+lbnd], extent=extent, aspect='auto', cmap=colormap,
                         vmin=vbounds[0], vmax=vbounds[1])
-        cell_no = i + lbnd
+        if cell_nos:
+            cell_no = cell_nos[i]
+        else:
+            cell_no = i + lbnd
         txtstring = title + '\nCell #: {}'.format(cell_no)
         title_plt_text = ax.text(0.5, 1.075, txtstring, fontsize=title_fntsz,
                                 ha='center', va='center', transform=ax.transAxes)
-        ims.append([im, title_plt_text])
+        if stats:
+            stats_txtstring = "RMS: {:.2f} um\nPV: {:.2f} um".format(rmsVals[i+lbnd], ptovVals[i+lbnd])
+            stats_plt_txt = ax.text(0.03, 0.05, stats_txtstring, fontsize=ax_fntsz,
+                                    transform=ax.transAxes)
+            ims.append([im, title_plt_text, stats_plt_txt])
+        else:
+            ims.append([im, title_plt_text])
     cbar = fig.colorbar(ims[0][0], cax=cax)
     cbar.set_label(cbar_title, fontsize=ax_fntsz)
     if dispR:
@@ -314,7 +372,10 @@ def displayIFs(ifs, dx, imbounds=None, vbounds=None, colormap='jet',
     ani = animation.ArtistAnimation(fig, ims, interval=frame_time, blit=False,
                                     repeat=repeat_bool)
     fps = int(1 / (frame_time/1000))
-    return ani, fps
+    if stats:
+        return ani, fps, [rmsVals, ptovVals]
+    else:
+        return ani, fps
 
 def displayIFs_diff(ifs1, ifs2, ifs3, dx, imbounds=None, vbounds=None, colormap='jet',
                 figsize=(18,6), title_fntsz=14, ax_fntsz=12,
@@ -322,7 +383,8 @@ def displayIFs_diff(ifs1, ifs2, ifs3, dx, imbounds=None, vbounds=None, colormap=
                 global_title='', cbar_title='Figure (microns)',
                 x_title='Azimuthal Dimension (mm)',
                 y_title='Axial Dimension (mm)',
-                frame_time=500, repeat_bool=False, dispR=False):
+                frame_time=500, repeat_bool=False, dispR=False,
+                cell_nos=None, stats=False):
 
     """
     Displays 3 sets of IFs adjacent to one another, in a single animation,
@@ -352,9 +414,15 @@ def displayIFs_diff(ifs1, ifs2, ifs3, dx, imbounds=None, vbounds=None, colormap=
         vbounds1 = [np.nanmin(ifs1), np.nanmax(ifs1)]
         vbounds2 = [np.nanmin(ifs2), np.nanmax(ifs2)]
         vbounds3 = [np.nanmin(ifs3), np.nanmax(ifs3)]
+    elif vbounds == 'share':
+        vbounds = [np.nanmin([ifs1, ifs2, ifs3]), np.nanmax([ifs1, ifs2, ifs3])]
+        vbounds1, vbounds2, vbounds3 = vbounds, vbounds, vbounds
     else:
         vbounds1, vbounds2, vbounds3 = vbounds, vbounds, vbounds
-    if imbounds:
+    if imbounds and cell_nos:
+        lbnd = cell_nos.index(imbounds[0])
+        ubnd = cell_nos.index(imbounds[1])
+    elif imbounds and not cell_nos:
         lbnd = imbounds[0]
         ubnd = imbounds[1]
     else:
@@ -362,6 +430,13 @@ def displayIFs_diff(ifs1, ifs2, ifs3, dx, imbounds=None, vbounds=None, colormap=
         ubnd = ifs1.shape[0]
     if type(cbar_title) != list:
         cbar_title = [cbar_title] * 3
+    if stats:
+        rmsVals1 = [alsis.rms(ifs1[i]) for i in range(ifs1.shape[0])]
+        rmsVals2 = [alsis.rms(ifs2[i]) for i in range(ifs2.shape[0])]
+        rmsVals3 = [alsis.rms(ifs3[i]) for i in range(ifs3.shape[0])]
+        ptovVals1 = [alsis.ptov(ifs1[i]) for i in range(ifs1.shape[0])]
+        ptovVals2 = [alsis.ptov(ifs2[i]) for i in range(ifs2.shape[0])]
+        ptovVals3 = [alsis.ptov(ifs3[i]) for i in range(ifs3.shape[0])]
     ims = []
     for i in range(ifs1[lbnd:ubnd+1].shape[0]):
         im1 = ax1.imshow(ifs1[i+lbnd], extent=extent, aspect='auto', cmap=colormap,
@@ -370,11 +445,26 @@ def displayIFs_diff(ifs1, ifs2, ifs3, dx, imbounds=None, vbounds=None, colormap=
                         vmin=vbounds2[0], vmax=vbounds2[1])
         im3 = ax3.imshow(ifs3[i+lbnd], extent=extent, aspect='auto', cmap=colormap,
                         vmin=vbounds3[0], vmax=vbounds3[1])
-        cell_no = i + lbnd
+        if cell_nos:
+            cell_no = cell_nos[i]
+        else:
+            cell_no = i + lbnd
         txtstring = '\nCell #: {}'.format(cell_no)
-        title_plt_text = plt.gcf().text(0.5, 0.95, txtstring, fontsize=title_fntsz,
+        title_plt_text = plt.gcf().text(0.5, 0.94, txtstring, fontsize=title_fntsz,
                                 ha='center', va='center')
-        ims.append([im1, im2, im3, title_plt_text])
+        if stats:
+            stats_txt1 = "RMS: {:.2f} um\nPV: {:.2f} um".format(rmsVals1[i+lbnd], ptovVals1[i+lbnd])
+            stats_txt2 = "RMS: {:.2f} um\nPV: {:.2f} um".format(rmsVals2[i+lbnd], ptovVals2[i+lbnd])
+            stats_txt3 = "RMS: {:.2f} um\nPV: {:.2f} um".format(rmsVals3[i+lbnd], ptovVals3[i+lbnd])
+            stats_plt_txt1 = ax1.text(0.03, 0.05, stats_txt1, fontsize=ax_fntsz,
+                                    transform=ax1.transAxes)
+            stats_plt_txt2 = ax2.text(0.03, 0.05, stats_txt2, fontsize=ax_fntsz,
+                                    transform=ax2.transAxes)
+            stats_plt_txt3 = ax3.text(0.03, 0.05, stats_txt3, fontsize=ax_fntsz,
+                                    transform=ax3.transAxes)
+            ims.append([im1, im2, im3, stats_plt_txt1, stats_plt_txt2, stats_plt_txt3, title_plt_text])
+        else:
+            ims.append([im1, im2, im3, title_plt_text])
     cbar1 = fig.colorbar(ims[0][0], cax=cax1)
     cbar2 = fig.colorbar(ims[0][1], cax=cax2)
     cbar3 = fig.colorbar(ims[0][2], cax=cax3)
@@ -384,4 +474,64 @@ def displayIFs_diff(ifs1, ifs2, ifs3, dx, imbounds=None, vbounds=None, colormap=
     ani = animation.ArtistAnimation(fig, ims, interval=frame_time, blit=False,
                                     repeat=repeat_bool)
     fps = int(1 / (frame_time/1000))
-    return ani, fps
+    if stats:
+        return ani, fps, [[rmsVals1, ptovVals1], [rmsVals2, ptovVals2], [rmsVals3, ptovVals3]]
+    else:
+        return ani, fps
+
+def get_ticks(xvals, yvals):
+    cell_gap = 5.
+    u_xvals = np.unique(xvals)
+    u_yvals = np.unique(yvals)
+    xticks = [u_xvals[0]]
+    yticks = [u_yvals[0]]
+    for i in range(len(u_xvals)+1):
+        if i == len(u_xvals): break
+        if np.abs(u_xvals[i]-xticks[-1]) >= cell_gap:
+            xticks.append(u_xvals[i])
+        else: continue
+    for i in range(len(u_yvals)+1):
+        if i == len(u_yvals): break
+        if np.abs(u_yvals[i]-yticks[-1]) >= cell_gap:
+            yticks.append(u_yvals[i])
+        else: continue
+    return np.array(xticks), np.array(yticks)
+
+def get_ticklabels(xticks, yticks, img_shp, dx):
+    x0, y0 = img_shp[1]/2, img_shp[0]/2
+    xlabels = np.round((xticks-x0)*dx, decimals=0)
+    ylabels = np.round((yticks-y0)*dx, decimals=0)
+    xlabels = [int(x) for x in xlabels]
+    ylabels = [int(y) for y in ylabels]
+    return xlabels, ylabels
+
+
+def cell_yield_scatter(maxInds, img_shp, dx, vbounds=None, colormap='jet',
+                    figsize=(8,8), title_fntsz=14, ax_fntsz=12,
+                    title="C1S04 Spatial Distribution of\nMeasured IFs' Maximum Figure Change",
+                    cbar_title='Figure (microns)',
+                    x_title='Azimuthal Dimension (mm)',
+                    y_title='Axial Dimension (mm)'):
+        maxvals = np.array([i[1] for i in maxInds])
+        xvals = np.array([i[3] for i in maxInds])
+        yvals = np.array([i[2] for i in maxInds])
+        fig, ax = plt.subplots(figsize=figsize)
+        scatter_plot = ax.scatter(xvals, yvals, c=maxvals, cmap=colormap)
+        xticks, yticks = get_ticks(xvals, yvals)
+        xlabels, ylabels = get_ticklabels(xticks, yticks, img_shp, dx)
+        ax.set_xticks(xticks)
+        ax.set_yticks(yticks)
+        # ax.set_xticklabels([int(tick) for tick in xticks])
+        # ax.set_yticklabels([int(tick) for tick in yticks])
+        ax.set_xticklabels(xlabels)
+        ax.set_yticklabels(ylabels)
+        ax.set_xlabel(x_title, fontsize=ax_fntsz)
+        ax.set_ylabel(y_title, fontsize=ax_fntsz)
+        ax.set_title(title, fontsize=title_fntsz)
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes("right", size="5%", pad=0.10)
+        cbar = plt.colorbar(scatter_plot, cax=cax)
+        cbar.set_label(cbar_title, fontsize=ax_fntsz)
+        # cbar.ax.tick_params(labelsize=tick_fntsz)
+        ax.grid(True)
+        return fig
