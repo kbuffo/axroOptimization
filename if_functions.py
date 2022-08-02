@@ -298,9 +298,13 @@ def matchIFs(input_ifs1, input_ifs2, dx, cell_gap=[5, 3.048],
 def isoIFs(input_ifs, dx, maxInds, setval=np.nan, extent=15):
     ifs = np.copy(input_ifs)
     for i in range(ifs.shape[0]):
-        y_ind = maxInds[i][2]
-        x_ind = maxInds[i][3]
+        y_ind = int(round(maxInds[i][0]))
+        x_ind = int(round(maxInds[i][1]))
         # print('i:', i, 'y_ind:', y_ind, 'x_ind', x_ind)
+        # ifs[i, :y_ind-extent, :] = setval
+        # ifs[i, y_ind+extent:, :] = setval
+        # ifs[i, :, :x_ind-extent] = setval
+        # ifs[i, :, x_ind+extent:] = setval
         if y_ind-extent > extent:
             ifs[i, :y_ind-extent, :] = setval
         if ifs.shape[1]-y_ind-extent > extent:
@@ -320,7 +324,7 @@ def displayIFs(ifs, dx, imbounds=None, vbounds=None, colormap='jet',
                 y_title='Axial Dimension (mm)',
                 cbar_title='Figure (microns)',
                 frame_time=500, repeat_bool=False, dispR=False,
-                cell_nos=None, stats=False):
+                cell_nos=None, stats=False, dispMaxInds=None):
     """
     Displays set of IFs in a single animation on one figure.
     """
@@ -332,12 +336,17 @@ def displayIFs(ifs, dx, imbounds=None, vbounds=None, colormap='jet',
     extent = fp.mk_extent(ifs[0], dx)
     if not vbounds:
         vbounds = [np.nanmin(ifs), np.nanmax(ifs)]
-    if imbounds and cell_nos:
-        lbnd = cell_nos.index(imbounds[0])
-        ubnd = cell_nos.index(imbounds[1])
-    elif imbounds and not cell_nos:
-        lbnd = imbounds[0]
-        ubnd = imbounds[1]
+    if cell_nos:
+        idx_txt = 'Cell'
+    else:
+        idx_txt = 'Image'
+    if imbounds:
+        if cell_nos:
+            lbnd = cell_nos.index(imbounds[0])
+            ubnd = cell_nos.index(imbounds[1])+1
+        else:
+            lbnd = imbounds[0]
+            ubnd = imbounds[1]+1
     else:
         lbnd = 0
         ubnd = ifs.shape[0]
@@ -345,23 +354,36 @@ def displayIFs(ifs, dx, imbounds=None, vbounds=None, colormap='jet',
         rmsVals = [alsis.rms(ifs[i]) for i in range(ifs.shape[0])]
         ptovVals = [alsis.ptov(ifs[i]) for i in range(ifs.shape[0])]
     ims = []
-    for i in range(ifs[lbnd:ubnd+1].shape[0]):
-        im = ax.imshow(ifs[i+lbnd], extent=extent, aspect='auto', cmap=colormap,
+    for i in range(lbnd, ubnd):
+        im = ax.imshow(ifs[i], extent=extent, aspect='auto', cmap=colormap,
                         vmin=vbounds[0], vmax=vbounds[1])
         if cell_nos:
             cell_no = cell_nos[i]
-        else:
-            cell_no = i + lbnd
-        txtstring = title + '\nCell #: {}'.format(cell_no)
+        else: cell_no = i
+
+        txtstring = title + '\n' + idx_txt + ' #: {}'.format(cell_no)
         title_plt_text = ax.text(0.5, 1.075, txtstring, fontsize=title_fntsz,
                                 ha='center', va='center', transform=ax.transAxes)
+
+        vline, hline = ax.text(0,0, ''), ax.text(0,0, '')
+        stats_plt_txt = ax.text(0,0, '')
+        maxval = ax.text(0,0, '')
+
+        if dispMaxInds:
+            vline = ax.axvline(x=(dispMaxInds[i][1]-ifs.shape[2]/2)*dx, ymin=0, ymax=1, color='white')
+            hline = ax.axhline(y=(ifs.shape[1]/2-dispMaxInds[i][0])*dx, xmin=0, xmax=1, color='white')
+            maxval_txt = "IF Max Figure: {:.3f} um".format(dispMaxInds[i][2])
+            maxval = ax.text(0.03, 0.95, maxval_txt, fontsize=ax_fntsz-4,
+                                transform=ax.transAxes)
+
         if stats:
             stats_txtstring = "RMS: {:.2f} um\nPV: {:.2f} um".format(rmsVals[i+lbnd], ptovVals[i+lbnd])
             stats_plt_txt = ax.text(0.03, 0.05, stats_txtstring, fontsize=ax_fntsz,
                                     transform=ax.transAxes)
-            ims.append([im, title_plt_text, stats_plt_txt])
-        else:
-            ims.append([im, title_plt_text])
+
+        ims.append([im, title_plt_text, stats_plt_txt, vline, hline, maxval])
+        # else:
+        #     ims.append([im, title_plt_text])
     cbar = fig.colorbar(ims[0][0], cax=cax)
     cbar.set_label(cbar_title, fontsize=ax_fntsz)
     if dispR:
@@ -384,7 +406,7 @@ def displayIFs_diff(ifs1, ifs2, ifs3, dx, imbounds=None, vbounds=None, colormap=
                 x_title='Azimuthal Dimension (mm)',
                 y_title='Axial Dimension (mm)',
                 frame_time=500, repeat_bool=False, dispR=False,
-                cell_nos=None, stats=False):
+                cell_nos=None, stats=False, dispMaxInds=None):
 
     """
     Displays 3 sets of IFs adjacent to one another, in a single animation,
@@ -419,12 +441,17 @@ def displayIFs_diff(ifs1, ifs2, ifs3, dx, imbounds=None, vbounds=None, colormap=
         vbounds1, vbounds2, vbounds3 = vbounds, vbounds, vbounds
     else:
         vbounds1, vbounds2, vbounds3 = vbounds, vbounds, vbounds
-    if imbounds and cell_nos:
-        lbnd = cell_nos.index(imbounds[0])
-        ubnd = cell_nos.index(imbounds[1])
-    elif imbounds and not cell_nos:
-        lbnd = imbounds[0]
-        ubnd = imbounds[1]
+    if cell_nos:
+        idx_txt = 'Cell'
+    else:
+        idx_txt = 'Image'
+    if imbounds:
+        if cell_nos:
+            lbnd = cell_nos.index(imbounds[0])
+            ubnd = cell_nos.index(imbounds[1])+1
+        else:
+            lbnd = imbounds[0]
+            ubnd = imbounds[1]+1
     else:
         lbnd = 0
         ubnd = ifs1.shape[0]
@@ -437,40 +464,65 @@ def displayIFs_diff(ifs1, ifs2, ifs3, dx, imbounds=None, vbounds=None, colormap=
         ptovVals1 = [alsis.ptov(ifs1[i]) for i in range(ifs1.shape[0])]
         ptovVals2 = [alsis.ptov(ifs2[i]) for i in range(ifs2.shape[0])]
         ptovVals3 = [alsis.ptov(ifs3[i]) for i in range(ifs3.shape[0])]
+    if dispMaxInds:
+        maxInds1 = dispMaxInds[0]
+        maxInds2 = dispMaxInds[1]
+
     ims = []
-    for i in range(ifs1[lbnd:ubnd+1].shape[0]):
-        im1 = ax1.imshow(ifs1[i+lbnd], extent=extent, aspect='auto', cmap=colormap,
+    for i in range(lbnd, ubnd):
+        im1 = ax1.imshow(ifs1[i], extent=extent, aspect='auto', cmap=colormap,
                         vmin=vbounds1[0], vmax=vbounds1[1])
-        im2 = ax2.imshow(ifs2[i+lbnd], extent=extent, aspect='auto', cmap=colormap,
+        im2 = ax2.imshow(ifs2[i], extent=extent, aspect='auto', cmap=colormap,
                         vmin=vbounds2[0], vmax=vbounds2[1])
-        im3 = ax3.imshow(ifs3[i+lbnd], extent=extent, aspect='auto', cmap=colormap,
+        im3 = ax3.imshow(ifs3[i], extent=extent, aspect='auto', cmap=colormap,
                         vmin=vbounds3[0], vmax=vbounds3[1])
         if cell_nos:
             cell_no = cell_nos[i]
-        else:
-            cell_no = i + lbnd
-        txtstring = '\nCell #: {}'.format(cell_no)
+        else: cell_no = i
+
+        txtstring = global_title + '\n' + idx_txt + ' #: {}'.format(cell_no)
         title_plt_text = plt.gcf().text(0.5, 0.94, txtstring, fontsize=title_fntsz,
                                 ha='center', va='center')
+
+        vline1, hline1 = ax1.text(0,0, ''), ax1.text(0,0, '')
+        vline2, hline2 = ax1.text(0,0, ''), ax1.text(0,0, '')
+        maxval1, maxval2 = ax1.text(0,0, ''), ax1.text(0,0, '')
+        stats_plt_txt1 = ax1.text(0,0, '')
+        stats_plt_txt2 = ax1.text(0,0, '')
+        stats_plt_txt3 = ax1.text(0,0, '')
+
+        if dispMaxInds:
+            # print('vline1 x coord: {:.2f}'.format((maxInds1[i][1]*dx)-ifs1.shape[1]/2))
+            vline1 = ax1.axvline(x=(maxInds1[i][1]-ifs1.shape[2]/2)*dx, ymin=0, ymax=1, color='white')
+            hline1 = ax1.axhline(y=(ifs1.shape[1]/2-maxInds1[i][0])*dx, xmin=0, xmax=1, color='white')
+            maxval1_txt = "IF Max Figure: {:.3f} um".format(maxInds1[i][2])
+            maxval1 = ax1.text(0.03, 0.95, maxval1_txt, fontsize=ax_fntsz-4,
+                                transform=ax1.transAxes)
+            vline2 = ax2.axvline(x=(maxInds2[i][1]-ifs2.shape[2]/2)*dx, ymin=0, ymax=1, color='white')
+            hline2 = ax2.axhline(y=(ifs2.shape[1]/2-maxInds2[i][0])*dx, xmin=0, xmax=1, color='white')
+            maxval2_txt = "IF Max Figure: {:.3f} um".format(maxInds2[i][2])
+            maxval2 = ax2.text(0.03, 0.95, maxval2_txt, fontsize=ax_fntsz-4,
+                                transform=ax2.transAxes)
+
         if stats:
-            stats_txt1 = "RMS: {:.2f} um\nPV: {:.2f} um".format(rmsVals1[i+lbnd], ptovVals1[i+lbnd])
-            stats_txt2 = "RMS: {:.2f} um\nPV: {:.2f} um".format(rmsVals2[i+lbnd], ptovVals2[i+lbnd])
-            stats_txt3 = "RMS: {:.2f} um\nPV: {:.2f} um".format(rmsVals3[i+lbnd], ptovVals3[i+lbnd])
+            stats_txt1 = "RMS: {:.2f} um\nPV: {:.2f} um".format(rmsVals1[i], ptovVals1[i])
+            stats_txt2 = "RMS: {:.2f} um\nPV: {:.2f} um".format(rmsVals2[i], ptovVals2[i])
+            stats_txt3 = "RMS: {:.2f} um\nPV: {:.2f} um".format(rmsVals3[i], ptovVals3[i])
             stats_plt_txt1 = ax1.text(0.03, 0.05, stats_txt1, fontsize=ax_fntsz,
                                     transform=ax1.transAxes)
             stats_plt_txt2 = ax2.text(0.03, 0.05, stats_txt2, fontsize=ax_fntsz,
                                     transform=ax2.transAxes)
             stats_plt_txt3 = ax3.text(0.03, 0.05, stats_txt3, fontsize=ax_fntsz,
                                     transform=ax3.transAxes)
-            ims.append([im1, im2, im3, stats_plt_txt1, stats_plt_txt2, stats_plt_txt3, title_plt_text])
-        else:
-            ims.append([im1, im2, im3, title_plt_text])
+        ims.append([im1, im2, im3, stats_plt_txt1, stats_plt_txt2, stats_plt_txt3, title_plt_text,
+                        vline1, hline1, vline2, hline2, maxval1, maxval2])
+
     cbar1 = fig.colorbar(ims[0][0], cax=cax1)
     cbar2 = fig.colorbar(ims[0][1], cax=cax2)
     cbar3 = fig.colorbar(ims[0][2], cax=cax3)
     cbar3.set_label(cbar_title[2], fontsize=ax_fntsz)
-    fig.subplots_adjust(top=0.85, hspace=0.5, wspace=0.35)
-    plt.suptitle(global_title,fontsize=title_fntsz)
+    fig.subplots_adjust(top=0.80, hspace=0.5, wspace=0.35)
+    # plt.suptitle(global_title,fontsize=title_fntsz)
     ani = animation.ArtistAnimation(fig, ims, interval=frame_time, blit=False,
                                     repeat=repeat_bool)
     fps = int(1 / (frame_time/1000))
@@ -505,25 +557,23 @@ def get_ticklabels(xticks, yticks, img_shp, dx):
     ylabels = [int(y) for y in ylabels]
     return xlabels, ylabels
 
-
 def cell_yield_scatter(maxInds, img_shp, dx, vbounds=None, colormap='jet',
                     figsize=(8,8), title_fntsz=14, ax_fntsz=12,
                     title="C1S04 Spatial Distribution of\nMeasured IFs' Maximum Figure Change",
                     cbar_title='Figure (microns)',
                     x_title='Azimuthal Dimension (mm)',
                     y_title='Axial Dimension (mm)'):
-        maxvals = np.array([i[1] for i in maxInds])
-        xvals = np.array([i[3] for i in maxInds])
-        yvals = np.array([i[2] for i in maxInds])
+        maxvals = np.array([i[2] for i in maxInds])
+        xvals = np.array([i[1] for i in maxInds])
+        yvals = np.array([i[0] for i in maxInds])
         fig, ax = plt.subplots(figsize=figsize)
         scatter_plot = ax.scatter(xvals, yvals, c=maxvals, cmap=colormap)
-        xticks, yticks = get_ticks(xvals, yvals)
-        xlabels, ylabels = get_ticklabels(xticks, yticks, img_shp, dx)
+        xlabels, ylabels = np.arange(-45, 50, 5), np.arange(-50, 55, 5)
+        xticks = xlabels/dx + img_shp[1]/2
+        yticks = ylabels/dx + img_shp[0]/2
         ax.set_xticks(xticks)
         ax.set_yticks(yticks)
-        # ax.set_xticklabels([int(tick) for tick in xticks])
-        # ax.set_yticklabels([int(tick) for tick in yticks])
-        ax.set_xticklabels(xlabels)
+        ax.set_xticklabels(xlabels, rotation=45)
         ax.set_yticklabels(ylabels)
         ax.set_xlabel(x_title, fontsize=ax_fntsz)
         ax.set_ylabel(y_title, fontsize=ax_fntsz)
@@ -534,4 +584,43 @@ def cell_yield_scatter(maxInds, img_shp, dx, vbounds=None, colormap='jet',
         cbar.set_label(cbar_title, fontsize=ax_fntsz)
         # cbar.ax.tick_params(labelsize=tick_fntsz)
         ax.grid(True)
+        return fig
+
+def compare_cell_yield_scatter(maxInds1, maxInds2, img_shp, dx, vbounds=None, colormap='jet',
+                    figsize=(12,6), title_fntsz=14, ax_fntsz=12,
+                    global_title="C1S04 Spatial Distribution of IFs' Maximum Figure Change",
+                    first_title='', second_title='',
+                    cbar_title='Figure (microns)',
+                    x_title='Azimuthal Dimension (mm)',
+                    y_title='Axial Dimension (mm)'):
+        maxvals1 = np.array([i[2] for i in maxInds1])
+        xvals1 = np.array([i[1] for i in maxInds1])
+        yvals1 = np.array([i[0] for i in maxInds1])
+        maxvals2 = np.array([i[2] for i in maxInds2])
+        xvals2 = np.array([i[1] for i in maxInds2])
+        yvals2 = np.array([i[0] for i in maxInds2])
+
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=figsize)
+        scatter_plot1 = ax1.scatter(xvals1, yvals1, c=maxvals1, cmap=colormap)
+        scatter_plot2 = ax2.scatter(xvals2, yvals2, c=maxvals2, cmap=colormap)
+        xlabels, ylabels = np.arange(-45, 50, 5), np.arange(-50, 55, 5)
+        xticks = xlabels/dx + img_shp[1]/2
+        yticks = ylabels/dx + img_shp[0]/2
+        for ax, scatter_plot in zip([ax1, ax2], [scatter_plot1, scatter_plot2]):
+            ax.set_xticks(xticks)
+            ax.set_yticks(yticks)
+            ax.set_xticklabels(xlabels, rotation=45)
+            ax.set_yticklabels(ylabels)
+            ax.set_xlabel(x_title, fontsize=ax_fntsz)
+            ax.set_ylabel(y_title, fontsize=ax_fntsz)
+            divider = make_axes_locatable(ax)
+            cax = divider.append_axes("right", size="5%", pad=0.10)
+            cbar = plt.colorbar(scatter_plot, cax=cax)
+            cbar.set_label(cbar_title, fontsize=ax_fntsz)
+            ax.grid(True)
+        ax1.set_title(first_title, fontsize=ax_fntsz)
+        ax2.set_title(second_title, fontsize=ax_fntsz)
+        fig.suptitle(global_title, fontsize=title_fntsz)
+        fig.tight_layout(rect=[0, 0, 1, 0.93])
+        fig.subplots_adjust(wspace=0.35)
         return fig

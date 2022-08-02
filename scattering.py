@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pdb
 from axroOptimization.conicsolve import primrad,primfocus,woltparam
+import axroOptimization.scatter_v2 as scatter
 import utilities.imaging.man as man
 # import axroOptimization.scatter as scatter
 
@@ -42,6 +43,6 @@ def primary2DPSF(img,dx,R0=220.,Z0=8400.,x0=np.linspace(-2.,2.,1001),\
                        for li in distortion],order='F')
     DR = length*np.sin(graze)
     #Integrate each slice in Fortran
-    psf = scatter.primarypsf(distortion,z-Z0,length,x0,wave,foc,R0,graze)
+    psf = scatter.primaryPSF(distortion,z-Z0,length,x0,wave,foc,R0,graze)
 
     return psf
