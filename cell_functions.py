@@ -1,3 +1,7 @@
+"""
+OUTDATED. USE CONSTRUCT CONNECTIONS IN axroHFDFCpy INSTEAD.
+"""
+
 from scipy import ndimage as nd
 import numpy as np
 from operator import itemgetter
