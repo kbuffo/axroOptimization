@@ -1,7 +1,7 @@
 ###############################################################################
 ###                                                                         ###
-### 22/08/09.                                                               ### 
-### Revision of the scatter module in Python.                               ### 
+### 22/08/09.                                                               ###
+### Revision of the scatter module in Python.                               ###
 ### Calculate half power diameter (HPD) and 68% encircled count fraction    ###
 ### (E68) merit functions for an X-ray mirror using PSF function derived    ###
 ### by Raimondi & Spiga (2015).                                             ###
@@ -15,25 +15,25 @@ import numpy as np
 def primaryPSF(d,z,l,x0,wave,foc,R0,graze):
     """
     Calculate PSF using the equation derived by Raimondi & Spiga (2015).
-    
+
     Parameters:
         d: input distortion
         z: position from the mirror (now a matrix)
         l: length of mirror
         x0: axial displacement (x0=0 => on axis)
         wave: wavelength of radiation
-        foc: focal length 
+        foc: focal length
         R0: radius of mirror at z=f
         graze: grazing incidence angle
-    
-    !!!IMPORTANT!!! 
-    
+
+    !!!IMPORTANT!!!
+
     1) Must make sure that input distortion does NOT contain any NaNs! This should
     be handled by both eva.computeMeritFunctions and scattering.primary2DPSF.
-    
+
     2) For this script to work, you must make your input z a matrix. To do this
     using axroOptimization functions, first, from numpy import matlib as npm
-    then input: 
+    then input:
     z = np.arange(np.shape(img)[0])*dx*np.cos(graze)+Z0
     z2 = npm.repmat(z,np.shape(img)[1],1)
     z3 = np.flip(z2)
@@ -43,7 +43,9 @@ def primaryPSF(d,z,l,x0,wave,foc,R0,graze):
     """
     c = complex(0.,1.) # c for complex.  c = i
     lengthsum = sum(l)
-    dz = abs(z[0][0]-z[0][1])
+    # print('z v3:', z)
+    # dz = abs(z[0][0]-z[0][1])
+    dz = abs(z[1]-z[0])
     psf = np.zeros(len(x0))
     x2,y2 = d.shape # So as not to confuse these x and y with the geometry of the equation.
     for i in range(len(x0)):

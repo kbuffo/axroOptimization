@@ -31,6 +31,7 @@ def primaryPSF(d,z,l,x0,wave,foc,R0,graze):
     """
     c = complex(0.,1.) # c for complex.  c = i
     lengthsum = sum(l)
+    # print('z v2:', z)
     dz = abs(z[1]-z[0])
     psf = np.zeros(len(x0))
     x2,y2 = d.shape # So as not to confuse these x and y with the geometry of the equation.

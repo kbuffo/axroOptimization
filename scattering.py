@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pdb
 from axroOptimization.conicsolve import primrad,primfocus,woltparam
-import axroOptimization.scatter_v3 as scatter
+import axroOptimization.scatter_v2 as scatter
 import utilities.imaging.man as man
 # import axroOptimization.scatter as scatter
 
