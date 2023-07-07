@@ -4,6 +4,7 @@ import axroOptimization.scattering as scat
 import utilities.imaging.man as man
 import axroOptimization.solver as slv
 import axroOptimization.conicsolve as conic
+import axroOptimization.correction_utility_functions as cuf
 
 import pdb
 
@@ -123,6 +124,101 @@ def correctHFDFC3(d,ifs,shade=None,dx=None,azweight=.015,smax=5.,\
     cor3 = man.newGridSize(cor2,np.shape(d),method='linear')
 
     return cor3,volt
+
+def correct_distortions(dist_maps, ifs, dx, shademask, smax=1.0):
+    """
+    Compute the optimal figure/slope change for a given input distortion(s) and calculate
+    the inital and final performances of the X-ray mirror along with voltages needed for correction.
+
+    INPUTS:
+    dist_maps: A single 2D array or 3D array of unshaded distortion maps in figure space.
+    ifs: 3D array of influence functions
+    dx: pixel spacing value (mm/pixel)
+    shademask: The shademask that will be used to strip the edges of the figures.
+    smax: Sets the upperbound that independent variable can be set to during the
+        minimization using sequential least squares programming.
+        smax is related to the voltage that the IFs you are using were taken at. smax is the
+        max scaled value relative to what the voltages the IFs were taken at.
+        i.e., theoretical IFs were taken at 1 V -> smax = 10.0
+                measured IFs were taken at 10 V -> smax = 1.0
+    OUTPUTS:
+    dist_fig_maps: A 3D array of the shaded distortion maps in figure space
+    dist_slp_maps: A 3D array of the shaded distortion maps in slope space
+    fig_change_maps: A 3D array of the shaded optimal figure change maps
+    slope_change_maps: A 3D array of the shaded optimal slope change maps
+    corrected_fig_maps: A 3D array of the corrected distortion maps in figure space
+    corrected_slp_maps: A 3D array of the corrected distortion maps in slope space
+    initial_performances: A list of lists that give the E68 and HPD for the shaded distortion maps
+        initial_performances[i][0] and initial_performances[i][1] give the E68 and HPD for
+        dist_fig_maps[i]
+    final_performances: A list of lists that give the E68 and HPD for the corrected maps.
+        final_performances[i][0] and final_performances[i][1] give the E68 and HPD for
+        corrected_fig_maps[i]
+    volts_ls: A list of lists that contain the voltages needed to correct a shaded distortion map.
+        volts_ls[i] is the list of volts needed to produce fig_change_maps[i] given dist_fig_maps[i]
+    """
+
+    dist_fig_maps = [] # the shaded distortion maps in figure space
+    dist_slp_maps = [] # the shaded distortion maps in slope space
+    initial_performances = [] # list of performances of distortion maps
+    final_performances = [] # list of performances of corrected maps
+    fig_change_maps = [] # shaded maps that show optimal figure change
+    slope_change_maps = [] # shaded maps that show optimal slope change
+    volts_ls = [] # list of lists that show the volts associated with the optimal figure/slope change
+    corrected_fig_maps = [] # shaded maps that show the corrected mirror in figure space
+    corrected_slp_maps = [] # shaded maps that show the corrected mirror in slope space
+    if dist_maps.ndim == 2: # check if only a single distortion map was provided
+        dist_maps = dist_maps.reshape(1, dist_maps.shape[0], dist_maps.shape[1])
+
+    for i in range(dist_maps.shape[0]):
+        # strip the shade from the distortion map
+        dist_shd_map = cuf.stripWithShade(dist_maps[i], shademask)
+        # compute the inital performance of the distortion map
+        initial_performance = computeMeritFunctions(dist_shd_map, [dx])
+        # compute the optimal figure change (use the unshaded dist_map in figure space)
+        fig_change_map, volts = correctXrayTestMirror(dist_maps[i], ifs, shademask, [dx], azweight=0,
+                                                        smax=smax, matlab_opt=False)
+        # null the mean figure value in slope change map
+        fig_change_map -= np.nanmean(fig_change_map)
+        # compute the corrected map
+        corrected_fig_map = dist_maps[i] + fig_change_map
+        corrected_fig_shd_map = cuf.stripWithShade(corrected_fig_map, shademask)
+        final_performance = computeMeritFunctions(corrected_fig_shd_map, [dx])
+
+        # strip the shade from figure maps and add them to lists:
+        fig_shd_change_map = cuf.stripWithShade(fig_change_map, shademask)
+
+        dist_fig_maps.append(dist_shd_map) # previously shaded during initial_performance
+        fig_change_maps.append(fig_shd_change_map)
+        corrected_fig_maps.append(corrected_fig_shd_map)
+
+        # convert the shaded figure maps to shaded slope maps:
+        dist_slp_maps.append(cuf.convertToAxialSlopes(dist_shd_map*1e-3, dx))
+        slope_change_maps.append(cuf.convertToAxialSlopes(fig_shd_change_map*1e-3, dx))
+        corrected_slp_maps.append(cuf.convertToAxialSlopes(corrected_fig_shd_map*1e-3, dx))
+
+        # add the other outputs to their respective lists:
+        initial_performances.append([initial_performance[0], initial_performance[1]]) # [E68, HPD]
+        final_performances.append([final_performance[0], final_performance[1]])
+        volts_ls.append(volts)
+
+    # convert figure maps to 3D arrays
+    if len(dist_fig_maps) > 1:
+        dist_fig_maps = np.stack(dist_fig_maps, axis=0)
+        dist_slp_maps = np.stack(dist_slp_maps, axis=0)
+        fig_change_maps = np.stack(fig_change_maps, axis=0)
+        slope_change_maps = np.stack(slope_change_maps, axis=0)
+        corrected_fig_maps = np.stack(corrected_fig_maps, axis=0)
+        corrected_slp_maps = np.stack(corrected_slp_maps, axis=0)
+    else:
+        dist_fig_maps = np.reshape(dist_fig_maps, (1, dist_fig_maps[0].shape[0], dist_fig_maps[0].shape[1]))
+        dist_slp_maps = np.reshape(dist_slp_maps, (1, dist_slp_maps[0].shape[0], dist_slp_maps[0].shape[1]))
+        fig_change_maps = np.reshape(fig_change_maps, (1, fig_change_maps[0].shape[0], fig_change_maps[0].shape[1]))
+        slope_change_maps = np.reshape(slope_change_maps, (1, slope_change_maps[0].shape[0], slope_change_maps[0].shape[1]))
+        corrected_fig_maps = np.reshape(corrected_fig_maps, (1, corrected_fig_maps[0].shape[0], corrected_fig_maps[0].shape[1]))
+        corrected_slp_maps = np.reshape(corrected_slp_maps, (1, corrected_slp_maps[0].shape[0], corrected_slp_maps[0].shape[1]))
+
+    return dist_fig_maps, dist_slp_maps, fig_change_maps, slope_change_maps, corrected_fig_maps, corrected_slp_maps, initial_performances, final_performances, volts_ls
 
 #def correctForCTF(d,ifs,shade=None,dx=None,azweight=.015,smax=1.0,\
 #                          bounds=None,avg_slope_remove = True):

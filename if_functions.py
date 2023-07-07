@@ -3,6 +3,7 @@ from scipy import ndimage as nd
 from scipy.interpolate import griddata
 from operator import itemgetter
 from itertools import chain
+import copy
 from astropy.io import fits as pyfits
 import matplotlib.pyplot as plt
 from matplotlib import gridspec
@@ -17,6 +18,8 @@ import imaging.analysis as alsis
 import imaging.stitch as stitch
 import axroOptimization.evaluateMirrors as eva
 import axroOptimization.solver as solver
+try: import construct_connections as cc
+except: import axroHFDFCpy.construct_connections as cc
 
 def ptov(d):
     """Calculate peak to valley for an image"""
@@ -104,6 +107,46 @@ def validateIFs(ifs_input, dx, triBounds=[10., 25.], triPlacement='all',
     false_ifs = np.array(false_ifs)
     return true_ifs, false_ifs
 
+def match_cells(cells1_input, cells2_input, normalize=True):
+    """
+    Inputs:
+        * cells1, cells2: list of cell objects to be matched
+    Returns:
+        * the cells in cells2 that match the cell numbers in cells1. The IFs
+        cells2 are normalized to the matching IFs of cells1 and the maxInds of cells2 are also
+        updated to account for normalization if if normalize=True.
+
+    Typical use case: cells1 = measured cells, cells2 = theoretical cells
+    will return: the set of theoretical cells that match the measured cells
+    """
+    cells1, cells2 = copy.deepcopy(cells1_input), copy.deepcopy(cells2_input)
+    cells2_match = []
+    for cell1 in cells1:
+        for cell2 in cells2:
+            if cell1.no == cell2.no: # found a matching cell
+                if normalize: # normalize the matching IF
+                    # cell2.ifunc = np.multiply(cell2.ifunc, np.divide(cell1.ifunc, cell2.ifunc))
+                    cell2.ifunc *= (cell1.maxInd[0][2] / cell2.maxInd[0][2])
+                    # cell2.ifunc *= (cell1.maxInd[0][2] / cell2.ifunc[int(round(cell1.maxInd[0][0]))][int(round(cell1.maxInd[0][1]))])
+                    # update the figure value for cell2's maxInd after normalization
+                    cell2.maxInd[0][2] = cell2.ifunc[int(round(cell2.maxInd[0][0]))][int(round(cell2.maxInd[0][1]))]
+                    if -1. not in cell2.maxInd[1]:
+                        cell2.maxInd[1][2] = cell2.ifunc[int(round(cell2.maxInd[1][0]))][int(round(cell2.maxInd[1][1]))]
+                cells2_match.append(cell2)
+    return cells2_match
+
+def diff_cell_IFs(cells1, cells2):
+    """
+    Subtracts the IFs of cells2 from cells1 and returns them as a list of cell objects.
+    The length of cells1 and cells2 should be equal and the IFs of cells1 and cells2 should be the same size.
+    The returned list of cell objects inherit all other attributes from cells1
+    """
+    diff_cells = copy.deepcopy(cells1)
+    for i in range(len(cells1)):
+        cell1, cell2, diff_cell = cells1[i], cells2[i], diff_cells[i]
+        diff_cell.add_if(cell1.ifunc-cell2.ifunc)
+    return diff_cells
+
 def match_ifs(ifs1, ifs2, maxInds1, maxInds2):
     """
     Returns:
@@ -158,9 +201,45 @@ def get_imageNum(cell_nos, cell_no):
     """
     return np.argwhere(cell_nos==cell_no)[0][0]
 
+def realign_maxInds(input_cells, dx):
+    """
+    Returns list of cells with adjusted maxInds and boxCoords by running nanargmax over the isolated set of IFs
+    Cells should have boxCoords attached.
+    """
+    cells = copy.deepcopy(input_cells)
+    cell_nos, ifs, maxInds, boxCoords = cc.get_cell_arrays(cells)
+    iso_ifs = isoIFs(ifs, dx, boxCoords)
+    for i, cell in enumerate(cells):
+        # print('-'*15+'Cell #: {}'.format(cell.no)+'-'*15)
+        # print('Old maxInd:\n{}'.format(cell.maxInd))
+        max_flatten_idx = np.nanargmax(iso_ifs[i])
+        max_coords = np.unravel_index(max_flatten_idx, iso_ifs[i].shape)
+#         print('Max coords:\n{}'.format(max_coords))
+        y_coord, x_coord = max_coords[0], max_coords[1]
+        fig_value = iso_ifs[i][y_coord][x_coord]
+#         print('fig value: {}'.format(fig_value))
+#         print('Row to replace: {}'.format(cell.maxInd[0, :]))
+#         print('Replace with: {}'.format(np.array([y_coord, x_coord, fig_value])))
+        cell.maxInd[0, :] = np.array([y_coord, x_coord, fig_value])
+        # print('New maxInd:\n{}'.format(cell.maxInd))
+    new_maxInds = np.stack([cell.maxInd for cell in cells], axis=0)
+    new_boxCoords = get_box_coords(new_maxInds, 12, ifs[0].shape)
+    for i, cell in enumerate(cells):
+        cell.boxCoord = new_boxCoords[i]
+    return cells
+
 ##############################################################################
 ##################### ARRAY MASKING FUNCTIONS ################################
 ##############################################################################
+
+def frame_cells(input_cells, dx, triBounds=[20.,22.], edgeTrim=6., triPlacement='all',
+                edgePlacement='all', triVal=0., edgeVal=0.):
+    cells = copy.deepcopy(input_cells)
+    ifs = np.stack([cell.ifunc for cell in cells], axis=0)
+    edges_ifs = zeroEdges(ifs, dx, amount=edgeTrim, placement=edgePlacement, setval=edgeVal)
+    frame_ifs = zeroCorners(edges_ifs, dx, bounds=triBounds, placement=triPlacement, setval=triVal)
+    cc.add_IFs_to_cells_wCellnos(np.array([cell.no for cell in cells]), frame_ifs, cells)
+    return cells
 
 def frameIFs(ifs_input, dx, triBounds=[20.,22.], edgeTrim=6., triPlacement='all',
             edgePlacement='all', triVal=0., edgeVal=0.):
@@ -199,6 +278,8 @@ def zeroCorners(ifs_input, dx, bounds=[10., 25.], placement='all', setval=0.):
     setval: value to set triangles at in array
     """
     ifs = np.copy(ifs_input)
+    if int(bounds[0]) == 0 and int(bounds[1]) == 0:
+        return ifs
     yDisp = int(round(bounds[0]/dx))
     xDisp = int(round(bounds[1]/dx))
     slope = xDisp/yDisp
@@ -221,6 +302,13 @@ def zeroCorners(ifs_input, dx, bounds=[10., 25.], placement='all', setval=0.):
     ifs[corners==0] = setval
     return ifs
 
+def iso_cells(input_cells, dx, setval=np.nan):
+    cells = copy.deepcopy(input_cells)
+    ifs = np.stack([cell.ifunc for cell in cells], axis=0)
+    boxCoords = np.stack([cell.boxCoord for cell in cells], axis=0)
+    iso_ifs = isoIFs(ifs, dx, boxCoords, setval=setval)
+    cc.add_IFs_to_cells_wCellnos(np.array([cell.no for cell in cells]), iso_ifs, cells)
+    return cells
 
 def isoIFs(ifs, dx, boxCoords, setval=np.nan):
     iso_ifs = np.full((ifs.shape), np.nan)
@@ -241,345 +329,6 @@ def isoIFs(ifs, dx, boxCoords, setval=np.nan):
             for j in range(y_ubnd-y_lbnd):
                 iso_ifs[i][y_lbnd+j][x_lbnd:x_ubnd+1] = ifs[i][y_lbnd+j][x_lbnd:x_ubnd+1]
     return iso_ifs
-
-##############################################################################
-############################### ANIMATION FUNCTIONS ##########################
-##############################################################################
-
-def displayIFs(ifs, dx, imbounds=None, vbounds=None, colormap='jet',
-                figsize=None, title_fntsz=14, ax_fntsz=12,
-                plot_titles = None,
-                global_title='', cbar_title='Figure (microns)',
-                x_title='Azimuthal Dimension (mm)',
-                y_title='Axial Dimension (mm)',
-                frame_time=500, repeat_bool=False, dispR=False,
-                cell_nos=None, stats=False, dispMaxInds=None, dispBoxCoords=None,
-                linecolors=['white', 'fuchsia'], details=None, includeCables=False):
-
-    """
-    Displays IFs stacks, side by side.
-
-    ifs: list of 3D arrays. The length of the list determines how many plots will
-    be made.
-
-    dx: pixel spacing for images.
-
-    imbounds: List to specify the range of images to animate: [upperBound, lowerBound]
-    If cell_nos is given, the entries of imbounds specify the cell numbers to
-    animate. If cell_nos is not given, the entries of imbounds specify the images to animate.
-
-    vbounds: list or list of lists to specify the color range of the IFs: [lowerBound, upperBound]
-    If one list is given, the bounds are applied to all plots. If a list of lists are given, unique
-    bounds are generated for each plot. Default is to generate separate vbounds for each plot.
-
-    figsize: specify the size of the figure as a tuple: i.e. (width, height) -> (8, 8).
-
-    plot_titles: list of plot titles for each plot generated. len(plot_titles) must equal len(ifs).
-
-    global_title: Title for figure.
-
-    frame_time: time in ms between each frame.
-
-    repeat_bool: if True loops animation when finished.
-
-    cell_nos: 1D array of cell nos that correspond to the IFs stacks provided.
-
-    stats: If true, display the rms and P-to-V of each image.
-
-    dispMaxInds: A list whose elments are 3D arrays that are the maxInds for the
-    corresponding IF stack given.
-
-    details: A list of cell objects for the plots, assuming all plots are showing the same cell each frame.
-    If includedm details allows grid coords, region, pin cell #, board, dac, channel,
-    and cables (optionally) to be displayed on every frame.
-
-    includeCables: If set to True, details will display the cable connections in addition to
-    the other information included in the cell objects lists.
-    """
-    ifs_ls = ifs.copy()
-    N_plots = len(ifs_ls)
-    if not figsize:
-        figsize = (7*len(ifs_ls), 6)
-    fig = plt.figure(figsize=figsize)
-    extent = fp.mk_extent(ifs_ls[0][0], dx)
-    if not plot_titles:
-        plot_titles = [''] * len(ifs_ls)
-    axs, caxs = init_subplots(N_plots, fig, plot_titles, # initalize subplots
-                            x_title, y_title, title_fntsz, ax_fntsz)
-    vbounds_ls = get_vbounds(ifs_ls, vbounds) # get vbounds
-    ubnd, lbnd, dispSingle = get_imbounds(imbounds, cell_nos, ifs_ls) # get imbounds
-    idx_txt, cell_nos = get_index_label(ifs_ls, cell_nos) # "Image #:" or "Cell #:"
-    if type(cbar_title) != list:
-        cbar_title = [cbar_title] * len(ifs_ls)
-    rms_ls, ptov_ls = [], []
-    if stats: # get rms and P-to-V of IFs
-        rms_ls, ptov_ls = get_stats(ifs_ls)
-
-    frames = []
-    for i in range(lbnd, ubnd): # create frames for animation
-        # generate features for a frame
-        feature_ls = make_frame(axs, ifs_ls, dx, i, extent, colormap, vbounds_ls,
-                                global_title, idx_txt, cell_nos, title_fntsz,
-                                dispMaxInds, ax_fntsz, stats, rms_ls, ptov_ls, dispBoxCoords,
-                                linecolors, details, includeCables)
-        frames.append(feature_ls)
-
-    for i in range(len(ifs_ls)): # attach static colorbar
-        cbar = fig.colorbar(frames[0][i], cax=caxs[i])
-        if i == len(ifs_ls)-1:
-            cbar.set_label(cbar_title[i], fontsize=ax_fntsz)
-    if details is not None:
-        fig.subplots_adjust(top=0.85, bottom=0.3, hspace=0.5, wspace=0.3)
-    else:
-        fig.subplots_adjust(top=0.85, hspace=0.5, wspace=0.3)
-    # create animation
-    ani = animation.ArtistAnimation(fig, frames, interval=frame_time, blit=False,
-                                    repeat=repeat_bool)
-    fps = int(1 / (frame_time/1000))
-    if dispSingle: ani = fig
-    return ani, fps # return animation and frames per second for saving to GIF
-
-
-def init_subplots(N_plots, fig, title_ls, x_title, y_title, title_fontsize, ax_fontsize):
-    """
-    Initializes a row of subplots based on the number of IF stacks provided.
-    Generates the axes and sets their features.
-    """
-    ax_ls, cax_ls = [], []
-    gs = gridspec.GridSpec(1, N_plots)
-    for i in range(N_plots):
-        ax = fig.add_subplot(gs[i])
-        ax.set_title(title_ls[i], fontsize=title_fontsize)
-        ax.set_xlabel(x_title, fontsize=ax_fontsize)
-        ax.set_ylabel(y_title, fontsize=ax_fontsize)
-        div = make_axes_locatable(ax)
-        cax = div.append_axes("right", size="5%", pad=0.10)
-        ax_ls.append(ax)
-        cax_ls.append(cax)
-    return ax_ls, cax_ls
-    pass
-
-
-def get_vbounds(ifs_ls, vbounds):
-    """
-    Formats the user provided vbounds into a list of vbounds.
-    """
-    vbounds_ls = []
-    if vbounds is None:
-        # generate different vbounds for each plot
-        for ifs in ifs_ls:
-            vbounds_ls.append([np.nanmin(ifs), np.nanmax(ifs)])
-    elif type(vbounds[0]) is list and len(vbounds) == len(ifs_ls):
-        # use different user-supplied vbounds for each plot
-        vbounds_ls = vbounds
-    elif type(vbounds) is list and len(vbounds) == 2:
-        # use the same user-supplied vbounds for each plot
-        vbounds_ls = [vbounds]*len(ifs_ls)
-    return vbounds_ls
-
-
-def get_index_label(ifs_ls, cell_nos):
-    """
-    Returns a label that denotes whether we are displaying images or explicitly
-    indexed cells.
-    """
-    if type(cell_nos) != type(None):
-        idx_label = 'Cell'
-    else:
-        idx_label = 'Image'
-        cell_nos = np.arange(0, len(ifs_ls[0]))
-    return idx_label, cell_nos
-
-
-def get_imbounds(imbounds, cell_nos, ifs_ls):
-    """
-    Formats the user provided imbounds to get the appropriate images to display
-    from the IF stacks.
-    """
-    displaySingle = False
-    if imbounds is not None: # the user provided imbounds
-        if imbounds[0] == imbounds[1]:
-            displaySingle = True # show only a single frame
-        if type(cell_nos) != type(None):
-            # match the imbounds to the cell numbers
-            try:
-                lowerBound = int(np.where(cell_nos == imbounds[0])[0])
-                upperBound = int(np.where(cell_nos == imbounds[1])[0] + 1)
-            except: print('One or more of your imbounds does not match the given cell numbers.')
-        else: # explicitly use the imbounds as indexes when cell_nos are not present
-            lowerBound, upperBound = imbounds[0], imbounds[1]+1
-    else: # show all images supplied
-        lowerBound, upperBound = 0, ifs_ls[0].shape[0]
-    return upperBound, lowerBound, displaySingle
-
-
-def get_stats(ifs_ls):
-    """
-    Returns a list of rms and P-to-V values for a list of IF stacks.
-    """
-    rms_ls, ptov_ls = [], []
-    for ifs in ifs_ls:
-        rms_vals = np.array([alsis.rms(ifs[i]) for i in range(ifs.shape[0])])
-        ptov_vals = np.array([alsis.ptov(ifs[i]) for i in range(ifs.shape[0])])
-        rms_ls.append(rms_vals)
-        ptov_ls.append(ptov_vals)
-    return rms_ls, ptov_ls
-
-
-def make_frame(axs, ifs_ls, dx, frame_num, extent, colormap, vbounds_ls,
-                global_title, idx_txt, cell_nos, title_fntsz, dispMaxInds, ax_fntsz,
-                stats, rms_ls, ptov_ls, dispBoxCoords, linecolors, details, includeCables):
-    """
-    Generates all the features that will be animated in the figure.
-    """
-    feature_ls = [] # list that holds all the features of a frame
-
-    for i, ifs in enumerate(ifs_ls): # plot the data
-        image = axs[i].imshow(ifs[frame_num], extent=extent, aspect='auto',
-                            cmap=colormap, vmin=vbounds_ls[i][0], vmax=vbounds_ls[i][1])
-        feature_ls.append(image)
-
-    cell_no = cell_nos[frame_num] # make the global title
-    txtstring = global_title + '\n' + idx_txt + ' #: {}'.format(int(cell_no))
-    title_plt_text = plt.gcf().text(0.5, 0.94, txtstring, fontsize=title_fntsz,
-                            ha='center', va='center')
-
-    # initialize lines and text entries as blank
-    # structure of vlines and hlines is:
-    # [ [ifs1_vline_prim,ifs1_vline_sec], [ifs2_vline_prim, ifs2_vline_sec], ...]
-    # structure maxvals is:
-    # [ ifs1_maxval, ifs2_maxval, ...]
-    vlines = [[ax.text(0,0,''), ax.text(0,0,'')] for ax in axs]
-    hlines = [[ax.text(0,0,''), ax.text(0,0,'')] for ax in axs]
-    maxvals = [ax.text(0,0,'') for ax in axs]
-    if dispMaxInds is not None: # draw the lines and text boxes for maxInds
-        vlines, hlines, maxvals = illustrate_maxInds(dispMaxInds, frame_num, axs, vlines,
-                                                    hlines, maxvals, dx, ifs_ls,
-                                                    ax_fntsz, linecolors)
-    # unpack nested lists into regular lists
-    vlines, hlines = list(chain(*vlines)), list(chain(*hlines))
-
-    # initialize the rms and ptov text boxes as blank
-    stats_textboxes = [ax.text(0,0,'') for ax in axs]
-    if stats: # draw the stats text boxes
-        stats_textboxes = illustrate_stats(axs, frame_num, rms_ls, ptov_ls,
-                                            ax_fntsz)
-
-    # initialize the box coord rectangles as blank
-    boxCoords_rectangles = [ax.text(0,0,'') for ax in axs]
-    if dispBoxCoords is not None:
-        boxCoords_rectangles = illustrate_boxCoords(axs, frame_num, dispBoxCoords,
-                                                    ifs_ls, dx, linecolors)
-
-    # initalize the details text boxes as blank
-    details_boxes = [ax.text(0,0, '') for ax in axs]
-    if details is not None:
-        details_boxes = illustrate_details(frame_num, details, includeCables, ax_fntsz)
-
-    # combine all features into single list
-    feature_ls += [title_plt_text] + vlines + hlines + maxvals + stats_textboxes + boxCoords_rectangles + details_boxes
-    return feature_ls
-
-
-def illustrate_maxInds(dispMaxInds, frame_num, axs, vlines, hlines, maxvals, dx,
-                        ifs_ls, ax_fntsz, linecolors):
-    """
-    Creates the coordinate tracking lines for IFs and the associated textbox.
-    """
-    for i, maxInds in enumerate(dispMaxInds):
-        ifs = ifs_ls[i]
-        primary_if_txt, secondary_if_txt = '', ''
-        if maxInds[frame_num][0][0] >= 0 and maxInds[frame_num][0][1] >= 0:
-            # check if primary maxInd coordinates are on grid before drawing
-            hlines[i][0] = axs[i].axhline(y=(ifs.shape[1]/2-maxInds[frame_num][0][0])*dx,
-                                                    xmin=0, xmax=1, color=linecolors[0])
-            vlines[i][0] = axs[i].axvline(x=(maxInds[frame_num][0][1]-ifs.shape[2]/2)*dx,
-                                            ymin=0, ymax=1, color=linecolors[0])
-            primary_if_txt = "1st IF || y: {:.0f} || x: {:.0f} || fig: {:.2f} um ||".format(maxInds[frame_num][0][0], maxInds[frame_num][0][1], maxInds[frame_num][0][2])
-        if maxInds[frame_num][1][0] >= 0 and maxInds[frame_num][1][1] >= 0:
-            # check if secondary maxInd coordinates are on grid before drawing
-            hlines[i][1] = axs[i].axhline(y=(ifs.shape[1]/2-maxInds[frame_num][1][0])*dx,
-                                            xmin=0, xmax=1, color=linecolors[1])
-            vlines[i][1] = axs[i].axvline(x=(maxInds[frame_num][1][1]-ifs.shape[2]/2)*dx,
-                                            ymin=0, ymax=1, color=linecolors[1])
-            secondary_if_txt = "\n2nd IF || y: {:.0f} || x: {:.0f} || fig: {:.2f} um ||".format(maxInds[frame_num][1][0], maxInds[frame_num][1][1], maxInds[frame_num][1][2])
-        # construct the maxInd textbox for each axis
-        maxInd_txt = primary_if_txt + secondary_if_txt
-        x_txt_pos, y_txt_pos = 0.03, 0.97
-        if (0 <= maxInds[frame_num][0][0] < ifs.shape[1]*0.15) or (0 <= maxInds[frame_num][1][0] < ifs.shape[1]*0.15):
-            # move IF text box if it will block IF
-            y_txt_pos = 0.22
-        maxvals[i] = axs[i].text(x_txt_pos, y_txt_pos, maxInd_txt, color='black', fontsize=ax_fntsz-4,
-                            transform=axs[i].transAxes, va='top', bbox=dict(facecolor='white', alpha=0.65))
-    return vlines, hlines, maxvals
-
-
-def illustrate_stats(axs, frame_num, rms_ls, ptov_ls, ax_fntsz):
-    """
-    Creates the textbox that will display the RMS and P-to-V values.
-    """
-    stats_textbox_ls = []
-    for i in range(len(rms_ls)):
-        stats_txt = "RMS: {:.2f} um\nPV: {:.2f} um".format(rms_ls[i][frame_num], ptov_ls[i][frame_num])
-        x_txt_pos, y_txt_pos = 0.7, 0.03
-        # print('frame #:', frame_num, 'threshold:', len(rms_ls[i])/2)
-        if frame_num > len(rms_ls[i])/2: # move text box if it will block IF
-            x_txt_pos = 0.03
-        stats_textbox = axs[i].text(x_txt_pos, y_txt_pos, stats_txt, fontsize=ax_fntsz,
-                                    transform=axs[i].transAxes, va='bottom',
-                                    bbox=dict(facecolor='white', alpha=0.65))
-        stats_textbox_ls.append(stats_textbox)
-    return stats_textbox_ls
-
-def illustrate_boxCoords(axs, frame_num, dispBoxCoords, ifs_ls, dx, linecolors):
-    """
-    Creates the rectangles that will enclose each IF.
-    """
-    rectangles = []
-    for i, boxCoords in enumerate(dispBoxCoords):
-        ifs = ifs_ls[i]
-        # anchor is (x_anchor, y_anchor) bottom left of box
-        # primary IF
-        y1_anchor = (ifs.shape[1]/2 - boxCoords[frame_num][0][2][0])*dx
-        x1_anchor = (boxCoords[frame_num][0][2][1]-ifs.shape[2]/2)*dx
-        height1 = (boxCoords[frame_num][0][2][0]-boxCoords[frame_num][0][0][0])*dx
-        width1 = (boxCoords[frame_num][0][1][1]-boxCoords[frame_num][0][0][1])*dx
-        rec1 = axs[i].add_patch(Rectangle((x1_anchor, y1_anchor), width1, height1,
-                                edgecolor=linecolors[0], facecolor='none'))
-        rectangles.append(rec1)
-        # check if secondary IF exists
-        if -1 not in boxCoords[frame_num][1]:
-            y2_anchor = (ifs.shape[1]/2 - boxCoords[frame_num][1][2][0])*dx
-            x2_anchor = (boxCoords[frame_num][1][2][1]-ifs.shape[2]/2)*dx
-            height2 = (boxCoords[frame_num][1][2][0]-boxCoords[frame_num][1][0][0])*dx
-            width2 = (boxCoords[frame_num][1][1][1]-boxCoords[frame_num][1][0][1])*dx
-            rec2 = axs[i].add_patch(Rectangle((x2_anchor, y2_anchor), width2, height2,
-                                    edgecolor=linecolors[1], facecolor='none'))
-            rectangles.append(rec2)
-    return rectangles
-
-def illustrate_details(frame_num, details, includeCables, ax_fntsz):
-    """
-    Creates the textboxes that will display the cell details.
-    """
-    cell = details[frame_num]
-    loc_header = '--------------------------------------------Location--------------------------------------------\n'
-    loc_txt = 'Grid Coords: {} || Region: {} || Pin Cell #: {} || Shorted Cell #: {}\n'.format(cell.grid_coord, cell.region, cell.pin_cell_no, cell.short_cell_no)
-    loc_textstring = loc_header + loc_txt
-    contr_header = '---------------------------------------------Control----------------------------------------------\n'
-    contr_txt = 'BRD: {} || DAC: {} || CH: {}'.format(cell.board_num, cell.dac_num, cell.channel)
-    contr_textstring = contr_header + contr_txt
-    if includeCables:
-        cable_header = '\n---------------------------------------------Cables---------------------------------------------\n'
-        cable_txt1 = 'P0XV Cable, Pin: {} || PV Cable, Pin: {}\n'.format([cell.p0xv_cable, cell.p0xv_pin], [cell.pv_cable, cell.pv_pin])
-        cable_txt2 = 'P0XA Cable, Pin: {} || PA Cable, Pin: {}\n'.format([cell.p0xa_cable, cell.p0xa_pin], [cell.pa_cable, cell.pa_pin])
-        cable_txt3 = 'J Port, Pin: {} || AOUT Pin: {}  '.format([cell.j_port, cell.j_pin], cell.aout_pin)
-        cable_textstring = cable_header + cable_txt1  + cable_txt2 + cable_txt3
-    else: cable_textstring = ''
-    details_textstring = loc_textstring  + contr_textstring + cable_textstring
-    details_textbox = plt.gcf().text(0.5, 0.1, details_textstring, fontsize=ax_fntsz-4,
-                                    ha='center', va='center', bbox=dict(facecolor='white', alpha=0.65))
-    return [details_textbox]
 
 
 ##############################################################################
@@ -778,10 +527,10 @@ def get_maxInds_from_boxCoords(boxCoords, ifs):
             maxInds[i][1][2] = ifs[i][int(round((y2-y1)/2+y1))][int(round((x2-x1)/2+x1))]
     return maxInds
 
-def stitch_ifs(ifs1, ifs2, maxInds1, maxInds2, boxCoords1, boxCoords2, degree):
+def stitch_cells(cells1_input, cells2_input, degree):
     """
-    Computes a transformation to bring maxInds2 and ifs2 in line with ifs1 and maxInds1.
-    The transformation is then applied to ifs2 and maxInds2 and then returned.
+    Computes a transformation to bring the IFs of cells2 in line with the IFs of cells1.
+    The transformation is then applied to IFs, maxInds, and boxCoords of cells2 and then returned.
 
     The type of transformation is determined by degree, which can equal the following:
     2: translation only (dx, dy)
@@ -789,14 +538,20 @@ def stitch_ifs(ifs1, ifs2, maxInds1, maxInds2, boxCoords1, boxCoords2, degree):
     4: translation, rotation, and magnification (dx, dy, theta, mag)
     5: translation, rotation, and separate magnifications (dx, dy, theta, x_mag, y_mag)
     """
+    # get the IFs, maxInds, and boxCoords from both lists of cell objects
+    cells1, cells2 = copy.deepcopy(cells1_input), copy.deepcopy(cells2_input)
+    _, ifs1, maxInds1, boxCoords1 = cc.get_cell_arrays(cells1)
+    _, ifs2, maxInds2, boxCoords2 = cc.get_cell_arrays(cells2)
+
     yf1, xf1 = maxInds1[:,0,0], maxInds1[:,0,1] # get x and y coordinates from maxInds
     yf2, xf2 = maxInds2[:,0,0], maxInds2[:,0,1]
     # calculate transformations
     tx, ty, theta, mag, x_mag, y_mag = None, None, None, None, None, None
     if degree == 2:
         print('Still a work in progress')
-        pass
-    if degree == 3:
+        tx, ty = stitch.matchFiducials_transOnly(xf1, yf1, xf2, yf2)
+        theta = 0
+    elif degree == 3:
         tx, ty, theta = stitch.matchFiducials(xf1, yf1, xf2, yf2)
     elif degree == 4:
         tx, ty, theta, mag = stitch.matchFiducials_wMag(xf1, yf1, xf2, yf2)
@@ -804,7 +559,7 @@ def stitch_ifs(ifs1, ifs2, maxInds1, maxInds2, boxCoords1, boxCoords2, degree):
         tx, ty, theta, x_mag, y_mag = stitch.matchFiducials_wSeparateMag(xf1, yf1, xf2, yf2)
     else:
         print('degree must be 2, 3, 4, or 5.')
-        pass
+        # pass
     if tx < 0: xf1 -= tx
     if ty < 0: yf1 -= ty
     print('\nCalculated transformation:\n dx: {}\n dy: {}\n theta: {}\n mag: {}\n x_mag: {}\n y_mag: {}\n'.format(tx, ty, theta, mag, x_mag, y_mag))
@@ -826,9 +581,99 @@ def stitch_ifs(ifs1, ifs2, maxInds1, maxInds2, boxCoords1, boxCoords2, degree):
                                ylim=[0,np.shape(img2)[0]])
 
         #Apply transformations to x,y coords of stitched image
-        if degree == 2:
-            pass
-        elif degree == 3:
+        # if degree == 2:
+        #     pass
+        if degree == 2 or degree == 3:
+            x2_t, y2_t = stitch.transformCoords(x2, y2, tx, ty, theta)
+            x1_t_boxCoords, y1_t_boxCoords = stitch.transformCoords(x1_boxCoords, y1_boxCoords, tx, ty, theta)
+            if -1 not in y2_boxCoords:
+                x2_t_boxCoords, y2_t_boxCoords = stitch.transformCoords(x2_boxCoords, y2_boxCoords, tx, ty, theta)
+        elif degree == 4:
+            x2_t, y2_t = stitch.transformCoords_wMag(x2, y2, tx, ty, theta, mag)
+            x1_t_boxCoords, y1_t_boxCoords = stitch.transformCoords_wMag(x1_boxCoords, y1_boxCoords, tx, ty, theta, mag)
+            if -1 not in y2_boxCoords:
+                x2_t_boxCoords, y2_t_boxCoords = stitch.transformCoords_wMag(x2_boxCoords, y2_boxCoords, tx, ty, theta, mag)
+        elif degree == 5:
+            x2_t, y2_t = stitch.transformCoords_wSeparateMag(x2, y2, tx, ty, theta, x_mag, y_mag)
+            x1_t_boxCoords, y1_t_boxCoords = stitch.transformCoords_wSeparateMag(x1_boxCoords, y1_boxCoords, tx, ty, theta, x_mag, y_mag)
+            if -1 not in y2_boxCoords:
+                x2_t_boxCoords, y2_t_boxCoords = stitch.transformCoords_wSeparateMag(x2_boxCoords, y2_boxCoords, tx, ty, theta, x_mag, y_mag)
+
+        # Interpolate stitched image onto expanded image grid
+        newimg = griddata((x2_t,y2_t),z2,(x1,y1),method='linear')
+        newimg = newimg.reshape(np.shape(img1))
+        print('Image {}: Interpolation ok'.format(i+1))
+        # Images should now be in the same reference frame
+        # Time to apply tip/tilt/piston to minimize RMS
+        newimg = stitch.matchPistonTipTilt(img1,newimg)
+        stitch_ifs[i] = newimg
+        stitch_boxCoords[i,0,:,0] = y1_t_boxCoords
+        stitch_boxCoords[i,0,:,1] = x1_t_boxCoords
+        if -1 not in y2_boxCoords:
+            stitch_boxCoords[i,1,:,0] = y2_t_boxCoords
+            stitch_boxCoords[i,1,:,1] = x2_t_boxCoords
+    stitch_maxInds = get_maxInds_from_boxCoords(stitch_boxCoords, stitch_ifs)
+
+    # attach the stitched IFs, maxInds, and boxCoords back to the list of cell objects
+    for i, cell in enumerate(cells2):
+        cell.add_if(stitch_ifs[i])
+        cell.add_maxInd(stitch_maxInds[i], None)
+        cell.boxCoord = stitch_boxCoords[i]
+
+    return cells2, (tx, ty, theta, mag, x_mag, y_mag)
+
+def stitch_ifs(ifs1, ifs2, maxInds1, maxInds2, boxCoords1, boxCoords2, degree):
+    """
+    Computes a transformation to bring maxInds2 and ifs2 in line with ifs1 and maxInds1.
+    The transformation is then applied to ifs2 and maxInds2 and then returned.
+
+    The type of transformation is determined by degree, which can equal the following:
+    2: translation only (dx, dy)
+    3: translation and rotation (dx, dy, theta)
+    4: translation, rotation, and magnification (dx, dy, theta, mag)
+    5: translation, rotation, and separate magnifications (dx, dy, theta, x_mag, y_mag)
+    """
+    yf1, xf1 = maxInds1[:,0,0], maxInds1[:,0,1] # get x and y coordinates from maxInds
+    yf2, xf2 = maxInds2[:,0,0], maxInds2[:,0,1]
+    # calculate transformations
+    tx, ty, theta, mag, x_mag, y_mag = None, None, None, None, None, None
+    if degree == 2:
+        print('Still a work in progress')
+        tx, ty = stitch.matchFiducials_transOnly(xf1, yf1, xf2, yf2)
+        theta = 0
+    elif degree == 3:
+        tx, ty, theta = stitch.matchFiducials(xf1, yf1, xf2, yf2)
+    elif degree == 4:
+        tx, ty, theta, mag = stitch.matchFiducials_wMag(xf1, yf1, xf2, yf2)
+    elif degree == 5:
+        tx, ty, theta, x_mag, y_mag = stitch.matchFiducials_wSeparateMag(xf1, yf1, xf2, yf2)
+    else:
+        print('degree must be 2, 3, 4, or 5.')
+        # pass
+    if tx < 0: xf1 -= tx
+    if ty < 0: yf1 -= ty
+    print('\nCalculated transformation:\n dx: {}\n dy: {}\n theta: {}\n mag: {}\n x_mag: {}\n y_mag: {}\n'.format(tx, ty, theta, mag, x_mag, y_mag))
+
+    # stitching process
+    stitch_ifs = np.zeros(ifs2.shape)
+    stitch_boxCoords = np.full(boxCoords2.shape, -1.)
+    for i in range(ifs2.shape[0]):
+        img1, img2 = ifs1[i], ifs2[i]
+        y1_boxCoords = boxCoords2[i,0,:,0] # primary IF
+        x1_boxCoords = boxCoords2[i,0,:,1]
+        y2_boxCoords = boxCoords2[i,1,:,0] # secondary IF
+        x2_boxCoords = boxCoords2[i,1,:,1]
+        #Get x,y,z points from reference image
+        x1,y1,z1 = man.unpackimage(img1,remove=False,xlim=[0,np.shape(img1)[1]],\
+                               ylim=[0,np.shape(img1)[0]])
+        #Get x,y,z points from stitched image
+        x2,y2,z2 = man.unpackimage(img2,xlim=[0,np.shape(img2)[1]],\
+                               ylim=[0,np.shape(img2)[0]])
+
+        #Apply transformations to x,y coords of stitched image
+        # if degree == 2:
+        #     pass
+        if degree == 2 or degree == 3:
             x2_t, y2_t = stitch.transformCoords(x2, y2, tx, ty, theta)
             x1_t_boxCoords, y1_t_boxCoords = stitch.transformCoords(x1_boxCoords, y1_boxCoords, tx, ty, theta)
             if -1 not in y2_boxCoords:
@@ -861,133 +706,6 @@ def stitch_ifs(ifs1, ifs2, maxInds1, maxInds2, boxCoords1, boxCoords2, degree):
 
     return stitch_ifs, stitch_maxInds, stitch_boxCoords, (tx, ty, theta, mag, x_mag, y_mag)
 
-##############################################################################
-############################### EXPERIMENTAL FUNCTIONS #######################
-##############################################################################
-
-def displayIFs_grid(ifs, dx, imbounds=None, vbounds=None, colormap='jet',
-                    figsize=(11,10), title_fontsize=14, ax_fontsize=12,
-                    plot_titles=[''], row_titles=[''], global_title='',
-                    x_label='Azimuthal Dimension (mm)', y_label='Axial Dimension (mm)',
-                    cbar_title='Figure (microns)', cell_nos=[None], stats=False, maxInds=[None],
-                    dispRadii=False, banded_rows=True, frame_time=500, repeat_bool=False):
-    """
-    ifs: list of ifs or list of lists of ifs, where each grouped list of ifs
-    specifies the row number.
-    imbounds: list with [frame min, frame max] to specify what range of frames to render.
-    dx: list of dx value(s) to use for each row. A list with one entry will be used
-    for all subplots.
-    vbounds: list of lists specifying the figure range to display per row:
-    i.e. vbounds=[[vmin1,vmax1], [None, None], [None,vmax3]]
-    plot_titles: list of plot titles that correspond with the order that ifs are given.
-    row_titles: list of titles for each row of plots.
-    global_title: overall title for figure.
-    cell_nos: list of 1D arrays that contain the cell numbers for each if of a given row.
-    The cell numbers for each row must be an explicit entry in the cell_nos list.
-    stats: if true, display the RMS and PV of all plots on each frame
-    maxInds: list of 3D arrays containing the maxInds for each plot. The maxInds
-    for each plot must be explicitly given in the list.
-    share_row_cbar: if true, only one color bar per row is generated.
-    dispRadii: if true, displays the large radii and small radii for C1S04.
-    banded_rows: alternates facecolor for each row.
-    frame_time: time in ms to display each frame.
-    repeat_bool: if true, animation will repeat after completion.
-    """
-    fig = plt.figure(figsize=figsize)
-    fig.suptitle(global_title+'\n', fontsize=title_fontsize+2)
-    ############################################################################
-    # format the data inputs for sequential plotting and rendering
-    ############################################################################
-    if type(ifs[0]) is not list: ifs = [ifs]
-    N_rows = len(ifs) # total number of rows
-    N_plots = 0 # total number of plots
-    for plot_ls in ifs:
-        N_plots += len(plot_ls) # count the total number of plots to make
-    if dx[0] is not list: dx = dx*N_rows # expand dx if not specified
-    # expand plot_titles and row titles if not specified
-    if len(plot_titles) != N_plots: plot_titles += ['']*(N_plots-len(plot_titles))
-    if len(row_titles) != N_rows: row_titles += ['']*(N_rows-len(row_titles))
-    # determine the frame_num_label based on whether cell_nos were supplied for
-    # a given row
-    if len(cell_nos) != N_rows: cell_nos += [None]*(N_rows-len(cell_nos))
-    frame_num_label = [] # labels whether we are index by image, or by cell number
-    for i in range(N_rows):
-        if type(cell_nos[i]) is None: frame_num_label.append('\nImage #:')
-        else: frame_num_label.append('\nCell #:')
-    # expand maxInds if not specified
-    if len(maxInds) != N_plots: maxInds += [None]*(N_plots-len(maxInds))
-    # expand vbounds if not specified
-    if vbounds is None:
-        print('You literally gave None for vbounds.')
-        vbounds = []
-        for i in range(N_rows):
-            row_ifs = ifs[i] # list of ifs for a row
-            # find the min and max values per row and append to vbounds
-            rowmin = min([np.nanmin(ifs) for ifs in row_ifs])
-            rowmax = max([np.nanmax(ifs) for ifs in row_ifs])
-            vbounds.append([rowmin, rowmax])
-    else:
-        for i, vbound_row in enumerate(vbounds):
-            # print('vbounds', vbounds)
-            # print("row: {}, vbound_row: {}".format(i, vbound_row))
-            # print('This row has {} sets of ifs.'.format(len(ifs[i])))
-            if vbound_row[0] is None: vbound_row[0] = min([np.nanmin(if_stack) for if_stack in ifs[i]])
-            if vbound_row[1] is None: vbound_row[1] = max([np.nanmax(if_stack) for if_stack in ifs[i]])
-    ############################################################################
-    # Iteratively generate subfigures rows and subplot columns
-    ############################################################################
-    gs = fig.add_gridspec(N_rows, 1)
-    plot_num = 0 # current plot number
-    axs = [] # list of axes that will be created
-    for i in range(N_rows):
-        # create and format subfigure
-        subfig = fig.add_subfigure(gs[i, 0])
-        subfig.suptitle(row_titles[i]+frame_num_label[i], fontsize=title_fontsize)
-        if banded_rows and i % 2 == 0: subfig.set_facecolor('0.75')
-        N_cols = len(ifs[i])
-        for j in range(N_cols):
-            # create each subplot
-            ax = subfig.add_subplot(1, N_cols, j+1)
-            print('row is', i, 'column is', j, 'total columns is', N_cols)
-            im = format_subplot(ax, plot_titles[plot_num], title_fontsize,
-                                ax_fontsize, x_label, y_label,
-                                ifs[i][j][0], dx[i], 'equal', colormap, vbounds[i],
-                                N_cols)
-            # create each colorbar
-            format_colorbar(im, ax, subfig, cbar_title, N_cols, ax_fontsize, ax_fontsize)
-            # if j+1 == N_cols:
-            plot_num += 1
-        subfig.subplots_adjust(bottom=0.15, top=0.85, hspace=0.8, wspace=0.8)
-
-    return fig
-
-def format_subplot(ax, plot_title, title_fontsize, ax_fontsize, x_label, y_label,
-                    data, dx, aspect, colormap, vbounds, N_cols):
-    """
-    Return the image from formating a subplot within a figure.
-    """
-    ax.set_title(plot_title, fontsize=title_fontsize-(N_cols-1))
-    ax.set_xlabel(x_label, fontsize=ax_fontsize-(N_cols-1))
-    ax.set_ylabel(y_label, fontsize=ax_fontsize-(N_cols-1))
-    ax.tick_params(axis='both', which='major', labelsize=10-((N_cols-1)*0.5))
-    ax.tick_params(axis='both', which='minor', labelsize=8)
-    extent = fp.mk_extent(data, dx)
-    im = ax.imshow(data, extent=extent, aspect=aspect, cmap=colormap,
-                    vmin=vbounds[0], vmax=vbounds[1])
-
-    return im
-
-def format_colorbar(im, ax, fig, cbar_title, N_cols, cbar_fontsize, tick_fontsize,
-                    location='right', orientation='vertical', fraction=0.15,
-                    shrink=1.0, pad=0.0):
-    """
-    Takes in an imshow image and associated axes and adds a color bar to it.
-    """
-    divider = make_axes_locatable(ax)
-    cax = divider.append_axes("right", size="7%", pad=0.1)
-    cbar = fig.colorbar(im, cax=cax)
-    cbar.set_label(cbar_title, fontsize=cbar_fontsize-(N_cols-1))
-    cbar.ax.tick_params(labelsize=tick_fontsize-(N_cols+1))
 
 ##############################################################################
 ############################### OLD FUNCTIONS ################################

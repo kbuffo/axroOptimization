@@ -2,8 +2,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pdb
 from axroOptimization.conicsolve import primrad,primfocus,woltparam
-import axroOptimization.scatter_v2 as scatter
+import axroOptimization.scatter_v3 as scatter
 import utilities.imaging.man as man
+from numpy import matlib as npm
 # import axroOptimization.scatter as scatter
 
 def printer():
@@ -28,11 +29,13 @@ def primary2DPSF(img,dx,R0=220.,Z0=8400.,x0=np.linspace(-2.,2.,1001),\
     compute PSF over observation points.
     """
     #Remove NaNs if they exist
-    img = man.stripnans(img)
     #Create height vector
     graze = woltparam(R0,Z0)[0]
     foc = primfocus(R0,Z0)
-    z = np.arange(np.shape(img)[0])*dx*np.cos(graze)+Z0
+    # z = np.arange(np.shape(img)[0])*dx*np.cos(graze)+Z0
+    z = np.arange(np.shape(img)[0])*dx*np.cos(graze)+Z0 # Jeff's additions
+    z2 = npm.repmat(z,np.shape(img)[1],1)
+    z3 = np.flip(z2)
     #Create radial position img
     rad = primrad(z,R0,Z0)
     rad2 = np.flipud(np.transpose(np.tile(rad,(np.shape(img)[1],1))))
@@ -43,6 +46,6 @@ def primary2DPSF(img,dx,R0=220.,Z0=8400.,x0=np.linspace(-2.,2.,1001),\
                        for li in distortion],order='F')
     DR = length*np.sin(graze)
     #Integrate each slice in Fortran
-    psf = scatter.primaryPSF(distortion,z-Z0,length,x0,wave,foc,R0,graze)
-
+    # psf = scatter.primaryPSF(distortion,z-Z0,length,x0,wave,foc,R0,graze)
+    psf = scatter.primaryPSF(distortion,z3-Z0,length,x0,wave,foc,R0,graze)
     return psf
