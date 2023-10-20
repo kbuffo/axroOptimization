@@ -5,6 +5,7 @@ import utilities.imaging.man as man
 import axroOptimization.solver as slv
 import axroOptimization.conicsolve as conic
 import axroOptimization.correction_utility_functions as cuf
+import axroHFDFCpy.construct_connections as cc
 
 import pdb
 
@@ -20,7 +21,10 @@ def correctXrayTestMirror(d,ifs,shade=None,dx=None,azweight=.015,smax=5.,\
     dx should be on IF grid size
     """
     #Rebin to IF grid
-    d2 = man.newGridSize(d,np.shape(ifs[0]))
+    if d.shape != ifs[0].shape:
+        d2 = man.newGridSize(d,np.shape(ifs[0]))
+    else:
+        d2 = d
 
     #Handle shademask
     if shade is None:
@@ -57,13 +61,15 @@ def computeMeritFunctions(d,dx,x0=np.linspace(-1.,1.,10001),\
     RMS axial slope
     Axial sag
     d in microns
+    dx value in a list: [dx]
+    wavelength in mm.
     """
     #Remove NaNs
     d = man.stripnans(d)
 
     #Compute PSF
     primfoc = conic.primfocus(R0,Z0) # distance to primary focus
-    print('Distance to primary focus:', primfoc)
+    # print('Distance to primary focus: {:.3f} mm'.format(primfoc))
     dx2 = x0[1]-x0[0]
     resa = scat.primary2DPSF(d,dx[0],R0 = R0,Z0 = Z0,x0=x0,wave = wave)
 
@@ -71,11 +77,12 @@ def computeMeritFunctions(d,dx,x0=np.linspace(-1.,1.,10001),\
     integral = np.sum(resa)*dx2
 
     if integral < .95:
-        print('Possible sampling problem')
-        print(str(np.sum(resa)*dx2))
+        print('Possible sampling problem. Integral: {:.5f}'.format(np.sum(resa)*dx2))
+        # print(str(np.sum(resa)*dx2))
     if integral > 1.5:
-        print('Possible aliasing problem')
-        print(str(np.sum(resa)*dx2))
+        print('Possible aliasing problem. Integral: {:.5f}'.format(np.sum(resa)*dx2))
+        # print('Possible aliasing problem')
+        # print(str(np.sum(resa)*dx2))
 
     #Normalize the integral to account for some flux
     #scattered beyond the detector
@@ -88,13 +95,17 @@ def computeMeritFunctions(d,dx,x0=np.linspace(-1.,1.,10001),\
     # Computing the rms rigorously, but not usefully.
     #rmsPSF = np.sqrt(np.sum(resa*x0**2)*dx2-(np.sum(resa*x0)*dx2)**2)
     # Computing the rms by assuming a Gaussian profile.
+    # E68
     rmsPSF = x0[np.argmin(np.abs(cdf-.84))]-\
              x0[np.argmin(np.abs(cdf-.16))]
+    # HPD
     hpdPSF = x0[np.argmin(np.abs(cdf-.75))]-\
              x0[np.argmin(np.abs(cdf-.25))]
 
-    return rmsPSF/primfoc*180/np.pi*60**2,hpdPSF/primfoc*180/np.pi*60**2,\
-           [x0,resa]
+    e68 = rmsPSF/primfoc*180/np.pi*60**2 # arcsec
+    hpd = hpdPSF/primfoc*180/np.pi*60**2
+
+    return e68, hpd, [x0,resa]
 
 def correctHFDFC3(d,ifs,shade=None,dx=None,azweight=.015,smax=5.,\
                           bounds=None):
@@ -125,7 +136,8 @@ def correctHFDFC3(d,ifs,shade=None,dx=None,azweight=.015,smax=5.,\
 
     return cor3,volt
 
-def correct_distortions(dist_maps, ifs, dx, shademask, smax=1.0):
+def correct_distortions(dist_maps, ifs, dx, shademask=None, smax=1.0,
+                        computeInitialPerformances=True):
     """
     Compute the optimal figure/slope change for a given input distortion(s) and calculate
     the inital and final performances of the X-ray mirror along with voltages needed for correction.
@@ -154,39 +166,58 @@ def correct_distortions(dist_maps, ifs, dx, shademask, smax=1.0):
     final_performances: A list of lists that give the E68 and HPD for the corrected maps.
         final_performances[i][0] and final_performances[i][1] give the E68 and HPD for
         corrected_fig_maps[i]
-    volts_ls: A list of lists that contain the voltages needed to correct a shaded distortion map.
-        volts_ls[i] is the list of volts needed to produce fig_change_maps[i] given dist_fig_maps[i]
+    volts_array: A N x M array that contains the voltages needed to correct the shaded distortion maps.
+        N indexes the distortion map and M indexes the cell number for that distortion map
+        volts_array[i, :] is the array of volts needed to produce fig_change_maps[i] given dist_fig_maps[i]
     """
 
     dist_fig_maps = [] # the shaded distortion maps in figure space
     dist_slp_maps = [] # the shaded distortion maps in slope space
-    initial_performances = [] # list of performances of distortion maps
-    final_performances = [] # list of performances of corrected maps
+    # initial_performances = [] # list of performances of distortion maps
+    # final_performances = [] # list of performances of corrected maps
     fig_change_maps = [] # shaded maps that show optimal figure change
     slope_change_maps = [] # shaded maps that show optimal slope change
-    volts_ls = [] # list of lists that show the volts associated with the optimal figure/slope change
     corrected_fig_maps = [] # shaded maps that show the corrected mirror in figure space
     corrected_slp_maps = [] # shaded maps that show the corrected mirror in slope space
     if dist_maps.ndim == 2: # check if only a single distortion map was provided
         dist_maps = dist_maps.reshape(1, dist_maps.shape[0], dist_maps.shape[1])
+    if ifs.ndim == 2: # check if only a single IF was provided
+        ifs = ifs.reshape(1, ifs.shape[0], ifs.shape[1])
+    volts_array = np.full((dist_maps.shape[0], ifs.shape[0]), np.nan) # list of lists that show the volts associated with the optimal figure/slope change
+    merits = np.full((dist_maps.shape[0], 3, 2), np.nan) # the array of E68 and HPD values
 
     for i in range(dist_maps.shape[0]):
+        print('-'*15+'Map: {}'.format(i)+'-'*15)
         # strip the shade from the distortion map
-        dist_shd_map = cuf.stripWithShade(dist_maps[i], shademask)
+        if shademask is not None:
+            dist_shd_map = cuf.stripWithShade(dist_maps[i], shademask)
+        else:
+            dist_shd_map = dist_maps[i]
         # compute the inital performance of the distortion map
-        initial_performance = computeMeritFunctions(dist_shd_map, [dx])
+        if computeInitialPerformances:
+            initial_performance = computeMeritFunctions(dist_shd_map, [dx])
+            print('Initial E68: {:.3f} arcsec, HPD: {:.3f} arcsec'.format(initial_performance[0], initial_performance[1]))
         # compute the optimal figure change (use the unshaded dist_map in figure space)
         fig_change_map, volts = correctXrayTestMirror(dist_maps[i], ifs, shademask, [dx], azweight=0,
                                                         smax=smax, matlab_opt=False)
         # null the mean figure value in slope change map
         fig_change_map -= np.nanmean(fig_change_map)
         # compute the corrected map
+        # print('original dist map shape:', dist_maps[i].shape)
+        # print('fig_change_map shape:', fig_change_map.shape)
         corrected_fig_map = dist_maps[i] + fig_change_map
-        corrected_fig_shd_map = cuf.stripWithShade(corrected_fig_map, shademask)
+        if shademask is not None:
+            corrected_fig_shd_map = cuf.stripWithShade(corrected_fig_map, shademask)
+        else:
+            corrected_fig_shd_map = corrected_fig_map
         final_performance = computeMeritFunctions(corrected_fig_shd_map, [dx])
+        print('Final E68: {:.3f} arcsec, HPD: {:.3f} arcsec'.format(final_performance[0], final_performance[1]))
 
         # strip the shade from figure maps and add them to lists:
-        fig_shd_change_map = cuf.stripWithShade(fig_change_map, shademask)
+        if shademask is not None:
+            fig_shd_change_map = cuf.stripWithShade(fig_change_map, shademask)
+        else:
+            fig_shd_change_map = fig_change_map
 
         dist_fig_maps.append(dist_shd_map) # previously shaded during initial_performance
         fig_change_maps.append(fig_shd_change_map)
@@ -197,10 +228,15 @@ def correct_distortions(dist_maps, ifs, dx, shademask, smax=1.0):
         slope_change_maps.append(cuf.convertToAxialSlopes(fig_shd_change_map*1e-3, dx))
         corrected_slp_maps.append(cuf.convertToAxialSlopes(corrected_fig_shd_map*1e-3, dx))
 
-        # add the other outputs to their respective lists:
-        initial_performances.append([initial_performance[0], initial_performance[1]]) # [E68, HPD]
-        final_performances.append([final_performance[0], final_performance[1]])
-        volts_ls.append(volts)
+        # add the other outputs to their respective lists/array:
+        if computeInitialPerformances:
+            merits[i][0][0] = initial_performance[0]
+            merits[i][0][1] = initial_performance[1]
+        merits[i][-1][0] = final_performance[0]
+        merits[i][-1][1] = final_performance[1]
+        # initial_performances.append([initial_performance[0], initial_performance[1]]) # [E68, HPD]
+        # final_performances.append([final_performance[0], final_performance[1]])
+        volts_array[i, :] = np.array(volts)
 
     # convert figure maps to 3D arrays
     if len(dist_fig_maps) > 1:
@@ -218,7 +254,68 @@ def correct_distortions(dist_maps, ifs, dx, shademask, smax=1.0):
         corrected_fig_maps = np.reshape(corrected_fig_maps, (1, corrected_fig_maps[0].shape[0], corrected_fig_maps[0].shape[1]))
         corrected_slp_maps = np.reshape(corrected_slp_maps, (1, corrected_slp_maps[0].shape[0], corrected_slp_maps[0].shape[1]))
 
-    return dist_fig_maps, dist_slp_maps, fig_change_maps, slope_change_maps, corrected_fig_maps, corrected_slp_maps, initial_performances, final_performances, volts_ls
+    return dist_fig_maps, dist_slp_maps, fig_change_maps, slope_change_maps, \
+            corrected_fig_maps, corrected_slp_maps, merits, volts_array
+
+def convert_volts_array_to_voltMaps(volts_array, cells, max_voltage, smax):
+    voltMaps = np.full((volts_array.shape[0], cc.cell_order_array.shape[0], cc.cell_order_array.shape[1]),
+                        np.nan)
+    for i in range(volts_array.shape[0]):
+        for j in range(len(cells)):
+            args = np.argwhere(cc.cell_order_array==cells[j].no)[0]
+            y_arg, x_arg = args[0], args[1]
+            voltMaps[i][args[0]][args[1]] = volts_array[i][j] * (max_voltage/smax)
+
+    return voltMaps
+
+def convert_voltMaps_to_volts_array(voltMaps, cells, max_voltage, smax):
+    if voltMaps.ndim == 2:
+        voltMaps = voltMaps.reshape(1, voltMaps.shape[0], voltMaps.shape[1])
+    volts_arrays = np.full((voltMaps.shape[0], len(cells)), np.nan)
+    for i in range(voltMaps.shape[0]):
+        voltMap = voltMaps[i]
+        for j in range(len(cells)):
+            cell_no = cells[j].no
+            args = np.argwhere(cc.cell_order_array==cell_no)[0]
+            y_arg, x_arg = args[0], args[1]
+            voltage = voltMap[y_arg][x_arg]
+            volts_arrays[i][j] = voltage * (smax/max_voltage)
+
+    return volts_arrays
+
+
+def applyVoltsArray_to_IFstack(ifs, volts_array, dx=None, shademask=None, convertToAxialSlopes=False):
+    """
+    Computes a figure change using a set of IFs and and an array of voltage
+    prescriptions.
+
+    ifs: An array of shape N x M x L, where N indexes the IF number, and each IF's
+    data is of shape (M, L). The IF data should be in microns.
+    volts_array: A one dimensional array of size N, where each element of the
+    array is indexed to match the IF number.
+    dx: pixel spacing (mm/pixel)
+
+    if shademask is specified, the resulting figure/slope change map will have shade
+    stripped from it.
+
+    if convertToAxialSlopes is True, the resulting figure change map will be converted
+    to axial slope space
+
+    Returns the figure or slope change when applying the volts_array to the ifs.
+    """
+    if ifs.shape[0] != volts_array.shape[0]:
+        print('Error: The number of IFs provided does not match the number of voltage prescriptions.')
+        return None
+    else:
+        scaled_IFs = np.copy(ifs)
+        for i in range(ifs.shape[0]):
+            scaled_IFs[i] = scaled_IFs[i] * volts_array[i]
+        change_map = np.sum(scaled_IFs, axis=0)
+        if shademask is not None:
+            change_map = cuf.stripWithShade(change_map, shademask)
+        if convertToAxialSlopes:
+            change_map = cuf.convertToAxialSlopes(change_map*1e-3, dx)
+    return change_map
 
 #def correctForCTF(d,ifs,shade=None,dx=None,azweight=.015,smax=1.0,\
 #                          bounds=None,avg_slope_remove = True):

@@ -27,6 +27,7 @@ def primary2DPSF(img,dx,R0=220.,Z0=8400.,x0=np.linspace(-2.,2.,1001),\
     radial distortion input data.
     Then pass to a F2PY scattering function to
     compute PSF over observation points.
+    wavelength in mm.
     """
     #Remove NaNs if they exist
     #Create height vector

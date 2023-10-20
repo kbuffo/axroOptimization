@@ -24,14 +24,15 @@ except: import axroHFDFCpy.construct_connections as cc
 
 def displayCells(cell_lists, dx, imbounds=None, vbounds=None, colormap='jet',
                 figsize=None, title_fntsz=14, ax_fntsz=12,
-                plot_titles = None,
+                plot_titles=None,
                 global_title='', cbar_title='Figure (microns)',
                 x_title='Azimuthal Dimension (mm)',
                 y_title='Axial Dimension (mm)',
                 frame_time=500, repeat_bool=False, dispR=False,
                 cell_nos=True, stats=True, dispMaxInds=None, dispBoxCoords=None,
                 linecolors=['white', 'fuchsia'], details=False, includeCables=False,
-                merits=None, showImageNumber=True, date=''):
+                merits=None, showImageNumber=True, date='', stats_textbox_coords=[0.03, 0.7],
+                show_maxInd_textbox=True, N_rows=1, frame_num_label=None, stats_units=['um']):
     """
     Wrapper function that runs displayIFs but takes in a list of lists of cell objects.
     dispMaxInds and dispBoxCoords should be specified with a list of the plot numbers you
@@ -68,19 +69,23 @@ def displayCells(cell_lists, dx, imbounds=None, vbounds=None, colormap='jet',
                         cell_nos=cell_nos_array, stats=stats, dispMaxInds=maxInds_list,
                         dispBoxCoords=boxCoords_list,
                         linecolors=linecolors, details=details_list, includeCables=includeCables,
-                        merits=merits, showImageNumber=showImageNumber, date=date)
+                        merits=merits, showImageNumber=showImageNumber, date=date,
+                        stats_textbox_coords=stats_textbox_coords, show_maxInd_textbox=show_maxInd_textbox,
+                        N_rows=N_rows, frame_num_label=frame_num_label, stats_units=stats_units)
     return ani, fps
 
 def displayIFs(ifs, dx, imbounds=None, vbounds=None, colormap='jet',
                 figsize=None, title_fntsz=14, ax_fntsz=12,
-                plot_titles = None,
+                plot_titles=None,
                 global_title='', cbar_title='Figure (microns)',
                 x_title='Azimuthal Dimension (mm)',
                 y_title='Axial Dimension (mm)',
                 frame_time=500, repeat_bool=False, dispR=False,
                 cell_nos=None, stats=False, dispMaxInds=None, dispBoxCoords=None,
                 linecolors=['white', 'fuchsia'], details=None, includeCables=False,
-                merits=None, showImageNumber=True, date=''):
+                merits=None, showImageNumber=True, date='', stats_textbox_coords=[0.03, 0.7],
+                show_maxInd_textbox=True, N_rows=1, stats_units=['um'], plots_wspace=0.3,
+                extent=None, frame_num_label=None):
 
     """
     Displays IFs stacks, side by side.
@@ -122,30 +127,40 @@ def displayIFs(ifs, dx, imbounds=None, vbounds=None, colormap='jet',
     includeCables: If set to True, details will display the cable connections in addition to
     the other information included in the cell objects lists.
 
-    merits: A list of lists whose elements contain the E68 and HPD for the before and after correction maps.
-        i.e. merits = [[[E68_before_1, HPD_before_1], [E68_before_2, HPD_before_2]],
-                        [[E68_after_1, HPD_after_1], [E68_after_2, HPD_after_2]]]
+    merits: An array of shape N x M x 2 matrix. N is the number of frames to render,
+            M is the number of subplots, and the first entry along the last axis is the E68 value, and
+            the last is the HPD. NaN values on the array will not be shown.
+
+    extent: [left, right, bottom, top] in data coordinates
     """
     ifs_ls = ifs.copy()
     N_plots = len(ifs_ls)
     ifs_ls = [iff.conv_2D_to_3D(if_map) if if_map.ndim==2 else if_map for if_map in ifs_ls] # convert any 2D arrays into 3D arrays
+    print()
     if '_' in date: date = date.replace('_', '')
     if not figsize:
         figsize = (7*len(ifs_ls), 6)
     fig = plt.figure(figsize=figsize)
-    extent = fp.mk_extent(ifs_ls[0][0], dx)
+    if extent is None:
+        extent = fp.mk_extent(ifs_ls[0][0], dx)
     if not plot_titles:
         plot_titles = [''] * len(ifs_ls)
     axs, caxs = init_subplots(N_plots, fig, plot_titles, # initalize subplots
-                            x_title, y_title, title_fntsz, ax_fntsz)
-    vbounds_ls = get_vbounds(ifs_ls, vbounds) # get vbounds
+                            x_title, y_title, title_fntsz, ax_fntsz, N_rows=N_rows)
+    if isinstance(imbounds, list) and len(imbounds) == 1:
+        imbounds = imbounds * 2
     ubnd, lbnd, dispSingle = get_imbounds(imbounds, cell_nos, ifs_ls) # get imbounds
-    idx_txt, cell_nos = get_index_label(ifs_ls, cell_nos) # "Image #:" or "Cell #:"
+    vbounds_ls = get_vbounds(ifs_ls, vbounds, [lbnd, ubnd]) # get vbounds
+    idx_txt, cell_nos = get_index_label(ifs_ls, cell_nos, frame_num_label) # "Image #:" or "Cell #:"
     if type(cbar_title) != list:
         cbar_title = [cbar_title] * len(ifs_ls)
     rms_ls, ptov_ls = [], []
     if stats: # get rms and P-to-V of IFs
         rms_ls, ptov_ls = get_stats(ifs_ls)
+    if not isinstance(stats_units, list):
+        stats_units = [stats_units]
+    if len(stats_units) < N_plots:
+        stats_units = stats_units * ((N_plots - len(stats_units)) + 1)
 
     frames = []
     for i in range(lbnd, ubnd): # create frames for animation
@@ -153,7 +168,8 @@ def displayIFs(ifs, dx, imbounds=None, vbounds=None, colormap='jet',
         feature_ls = make_frame(axs, ifs_ls, dx, i, extent, colormap, vbounds_ls,
                                 global_title, idx_txt, cell_nos, title_fntsz,
                                 dispMaxInds, ax_fntsz, stats, rms_ls, ptov_ls, dispBoxCoords,
-                                linecolors, details, includeCables, merits, dispR, showImageNumber, date)
+                                linecolors, details, includeCables, merits, dispR, showImageNumber, date,
+                                stats_textbox_coords, show_maxInd_textbox, stats_units=stats_units)
         frames.append(feature_ls)
 
     for i in range(len(ifs_ls)): # attach static colorbar
@@ -167,7 +183,7 @@ def displayIFs(ifs, dx, imbounds=None, vbounds=None, colormap='jet',
     if details is not None:
         fig.subplots_adjust(top=0.85, bottom=0.3, hspace=0.5, wspace=0.3)
     else:
-        fig.subplots_adjust(top=0.85, hspace=0.5, wspace=0.3)
+        fig.subplots_adjust(top=0.85, hspace=0.5, wspace=plots_wspace)
     # create animation
     ani = animation.ArtistAnimation(fig, frames, interval=frame_time, blit=False,
                                     repeat=repeat_bool)
@@ -179,7 +195,7 @@ def displayIFs(ifs, dx, imbounds=None, vbounds=None, colormap='jet',
     return ani, fps # return animation and frames per second for saving to GIF
 
 
-def init_subplots(N_plots, fig, title_ls, x_title, y_title, title_fontsize, ax_fontsize):
+def init_subplots(N_plots, fig, title_ls, x_title, y_title, title_fontsize, ax_fontsize, N_rows=1):
     """
     Initializes a row of subplots based on the number of IF stacks provided.
     Generates the axes and sets their features.
@@ -188,7 +204,7 @@ def init_subplots(N_plots, fig, title_ls, x_title, y_title, title_fontsize, ax_f
     # if not given a list of titles, convert single string to list
     if type(x_title) != list: x_title = [x_title]*N_plots
     if type(y_title) != list: y_title = [y_title]*N_plots
-    gs = gridspec.GridSpec(1, N_plots)
+    gs = gridspec.GridSpec(N_rows, N_plots)
     for i in range(N_plots):
         ax = fig.add_subplot(gs[i])
         ax.set_title(title_ls[i], fontsize=title_fontsize)
@@ -202,33 +218,43 @@ def init_subplots(N_plots, fig, title_ls, x_title, y_title, title_fontsize, ax_f
     pass
 
 
-def get_vbounds(ifs_ls, vbounds):
+def get_vbounds(ifs_ls, vbounds, imbounds):
     """
     Formats the user provided vbounds into a list of vbounds.
     """
     vbounds_ls = []
-    if vbounds is None:
-        # generate different vbounds for each plot
+    vbound_single_image = False
+    if np.abs(imbounds[0]-imbounds[1]) == 1: vbound_single_image = True
+    if vbounds is None and not vbound_single_image:
+        # generate different vbounds for each plot (based on the stack of IFs for each plot)
         for ifs in ifs_ls:
             vbounds_ls.append([np.nanmin(ifs), np.nanmax(ifs)])
+    elif vbounds is None and vbound_single_image:
+        # generate different vbounds for each plot (based on a single IF for each plot)
+        for ifs in ifs_ls:
+            vbounds_ls.append([np.nanmin(ifs[imbounds[0]]), np.nanmax(ifs[imbounds[0]])])
     elif type(vbounds[0]) is list and len(vbounds) == len(ifs_ls):
         # use different user-supplied vbounds for each plot
         vbounds_ls = vbounds
     elif type(vbounds) is list and len(vbounds) == 2:
         # use the same user-supplied vbounds for each plot
         vbounds_ls = [vbounds]*len(ifs_ls)
+    # print(vbounds_ls)
     return vbounds_ls
 
 
-def get_index_label(ifs_ls, cell_nos):
+def get_index_label(ifs_ls, cell_nos, frame_num_label):
     """
     Returns a label that denotes whether we are displaying images or explicitly
     indexed cells.
     """
-    if type(cell_nos) != type(None):
-        idx_label = 'Cell'
+    if frame_num_label is not None:
+        idx_label = frame_num_label
+        cell_nos = np.arange(0, len(ifs_ls[0]))
+    elif type(cell_nos) != type(None):
+        idx_label = 'Cell #:'
     else:
-        idx_label = 'Image'
+        idx_label = 'Image #:'
         cell_nos = np.arange(0, len(ifs_ls[0]))
     return idx_label, cell_nos
 
@@ -272,7 +298,8 @@ def get_stats(ifs_ls):
 def make_frame(axs, ifs_ls, dx, frame_num, extent, colormap, vbounds_ls,
                 global_title, idx_txt, cell_nos, title_fntsz, dispMaxInds, ax_fntsz,
                 stats, rms_ls, ptov_ls, dispBoxCoords, linecolors, details, includeCables,
-                merits, dispR, showImageNumber, date):
+                merits, dispR, showImageNumber, date, stats_textbox_coords, show_maxInd_textbox,
+                stats_units):
     """
     Generates all the features that will be animated in the figure.
     """
@@ -284,7 +311,7 @@ def make_frame(axs, ifs_ls, dx, frame_num, extent, colormap, vbounds_ls,
         feature_ls.append(image)
     cell_no = cell_nos[frame_num] # make the global title
     if showImageNumber:
-        txtstring = global_title + '\n' + idx_txt + ' #: {}'.format(int(cell_no))
+        txtstring = global_title + '\n' + idx_txt + ' {}\n'.format(int(cell_no))
     else:
         txtstring = global_title
         if date != '': txtstring += '\nDate: ' + date
@@ -302,7 +329,7 @@ def make_frame(axs, ifs_ls, dx, frame_num, extent, colormap, vbounds_ls,
     if dispMaxInds is not None: # draw the lines and text boxes for maxInds
         vlines, hlines, maxvals = illustrate_maxInds(dispMaxInds, frame_num, axs, vlines,
                                                     hlines, maxvals, dx, ifs_ls,
-                                                    ax_fntsz, linecolors)
+                                                    ax_fntsz, linecolors, show_maxInd_textbox)
     # unpack nested lists into regular lists
     vlines, hlines = list(chain(*vlines)), list(chain(*hlines))
 
@@ -310,7 +337,7 @@ def make_frame(axs, ifs_ls, dx, frame_num, extent, colormap, vbounds_ls,
     stats_textboxes = [ax.text(0,0,'') for ax in axs]
     if stats: # draw the stats text boxes
         stats_textboxes = illustrate_stats(axs, frame_num, rms_ls, ptov_ls,
-                                            ax_fntsz)
+                                            ax_fntsz, stats_textbox_coords, stats_units)
 
     # initialize the box coord rectangles as blank
     boxCoords_rectangles = [ax.text(0,0,'') for ax in axs]
@@ -340,7 +367,7 @@ def make_frame(axs, ifs_ls, dx, frame_num, extent, colormap, vbounds_ls,
 
 
 def illustrate_maxInds(dispMaxInds, frame_num, axs, vlines, hlines, maxvals, dx,
-                        ifs_ls, ax_fntsz, linecolors):
+                        ifs_ls, ax_fntsz, linecolors, show_maxInd_textbox):
     """
     Creates the coordinate tracking lines for IFs and the associated textbox.
     """
@@ -368,21 +395,25 @@ def illustrate_maxInds(dispMaxInds, frame_num, axs, vlines, hlines, maxvals, dx,
         if (0 <= maxInds[frame_num][0][0] < ifs.shape[1]*0.15) or (0 <= maxInds[frame_num][1][0] < ifs.shape[1]*0.15):
             # move IF text box if it will block IF
             y_txt_pos = 0.22
-        maxvals[i] = axs[i].text(x_txt_pos, y_txt_pos, maxInd_txt, color='black', fontsize=ax_fntsz-4,
+        if show_maxInd_textbox:
+            maxvals[i] = axs[i].text(x_txt_pos, y_txt_pos, maxInd_txt, color='black', fontsize=ax_fntsz-4,
                             transform=axs[i].transAxes, va='top', bbox=dict(facecolor='white', alpha=0.65))
     return vlines, hlines, maxvals
 
 
-def illustrate_stats(axs, frame_num, rms_ls, ptov_ls, ax_fntsz):
+def illustrate_stats(axs, frame_num, rms_ls, ptov_ls, ax_fntsz, stats_textbox_coords, stats_units):
     """
     Creates the textbox that will display the RMS and P-to-V values.
     """
     stats_textbox_ls = []
     for i in range(len(rms_ls)):
-        stats_txt = "RMS: {:.2f} um\nPV: {:.2f} um".format(rms_ls[i][frame_num], ptov_ls[i][frame_num])
-        x_txt_pos, y_txt_pos = 0.7, 0.03
+        rms_val = rms_ls[i][frame_num]
+        pv_val = ptov_ls[i][frame_num]
+        stats_txt = "RMS: {:.2f} {}\nPV: {:.2f} {}".format(rms_val, stats_units[i], pv_val, stats_units[i])
+        y_txt_pos, x_txt_pos = stats_textbox_coords[0], stats_textbox_coords[1]
+        # x_txt_pos, y_txt_pos = 0.7, 0.03
         # print('frame #:', frame_num, 'threshold:', len(rms_ls[i])/2)
-        if frame_num > len(rms_ls[i])/2: # move text box if it will block IF
+        if len(stats_textbox_coords) != 3 and frame_num > len(rms_ls[i])/2: # move text box if it will block IF
             x_txt_pos = 0.03
         stats_textbox = axs[i].text(x_txt_pos, y_txt_pos, stats_txt, fontsize=ax_fntsz,
                                     transform=axs[i].transAxes, va='bottom',
@@ -448,12 +479,20 @@ def illustrate_merits(axs, frame_num, merits, ax_fntsz):
     Creates the textboxes that will display the HPD and E68 merit values.
     """
     merit_textboxes = []
-    edge_axs = [axs[0], axs[-1]]
-    for i in range(len(merits)):
-        merit_txt = "PSF HPD: {:.1f} arcsec\nPSF E68: {:.1f} arcsec".format(merits[i][frame_num][1], merits[i][frame_num][0])
+    # print('merits given:\n', merits)
+    # print('checking:', merits[frame_num])
+
+    for i in range(len(axs)):
+        if np.any(np.isnan(merits[frame_num][i])):
+            continue
+        else:
+            hpd = merits[frame_num][i][1]
+            e68 = merits[frame_num][i][0]
+        merit_txt = "PSF HPD: {:.2f} arcsec\nPSF E68: {:.2f} arcsec"\
+                    .format(hpd, e68)
         x_txt_pos, y_txt_pos = 0.03, 0.03
-        merit_textbox = edge_axs[i].text(x_txt_pos, y_txt_pos, merit_txt, fontsize=ax_fntsz,
-                                    transform=edge_axs[i].transAxes, va='bottom',
+        merit_textbox = axs[i].text(x_txt_pos, y_txt_pos, merit_txt, fontsize=ax_fntsz,
+                                    transform=axs[i].transAxes, va='bottom',
                                     bbox=dict(facecolor='white', alpha=0.65))
         merit_textboxes.append(merit_textbox)
     return merit_textboxes
@@ -474,14 +513,94 @@ def illustrate_dispR(axs, frame_num, ax_fntsz):
         textboxes.append(small_R_text)
     return textboxes
 
+def displayVoltMaps(voltMaps_input, date='', map_nos=None, voltMaplabel='Map:',
+                    suppress_thresh=None,
+                    imbounds=None, vbounds=None, colormap='jet',
+                    figsize=None, title_fntsz=14, ax_fntsz=12,
+                    global_title='Voltage Maps', cbar_title='Voltage (V)',
+                    x_title='Column',
+                    y_title='Row',
+                    frame_time=1000, repeat_bool=False,
+                    includeMeanVolt=False,
+                    title_y_pos=0.94, showMap_no=True,
+                    cell_border_color='white'):
+    voltMaps = np.copy(voltMaps_input)
+    # if a single 2D voltmap is given, convert it to a 3D array
+    if voltMaps.ndim < 3: voltMaps = iff.conv_2D_to_3D(voltMaps)
+    if map_nos is None:
+        map_nos = np.arange(voltMaps.shape[0])
+    # if not figsize and not suppress_thresh: figsize=(6.5,6)
+    # elif not figsize and suppress_thresh: figsize=(6, 6)
+    if not figsize: figsize = (6, 6)
+    if '_' in date: date = date.replace('_', '')
+    if suppress_thresh: voltMaps = np.where(voltMaps<suppress_thresh, np.nan, voltMaps)
+    if not vbounds: vbounds = [np.nanmin(voltMaps), np.nanmax(voltMaps)]
+    fig = plt.figure(figsize=figsize)
+    extent = None
+    axs, caxs = init_subplots(1, fig, [''], # initalize subplot
+                            x_title, y_title, title_fntsz, ax_fntsz)
+    ax, cax = axs[0], caxs[0]
+    if isinstance(imbounds, list) and len(imbounds) == 1:
+        imbounds = imbounds * 2
+    ubnd, lbnd, dispSingle = get_imbounds(imbounds, map_nos, [voltMaps]) # get imbounds
+    frames = []
+    for i in range(lbnd, ubnd): # create frames for animation
+        # image = ax.imshow(voltMaps[i], extent=extent, aspect='equal',
+        #                     cmap=colormap, vmin=vbounds[0], vmax=vbounds[1])
+        # make the animated title text
+        if date != '': date_text = '\nDate: {}'.format(date)
+        else: date_text = ''
+        if showMap_no:
+            mapNo_text = '\n' + voltMaplabel + ' {}'.format(map_nos[i])
+        else: mapNo_text = ''
+        combined_text = global_title + date_text + mapNo_text
+        title_plt_text = plt.gcf().text(0.5, title_y_pos, combined_text,
+                                        fontsize=title_fntsz,
+                                        ha='center', va='center')
+        # # include the mean value of voltMap?
+        # if includeMeanVolt: mean_text = 'Mean: {:.2f} V'.format(np.nanmean(voltMaps[i]))
+        # else: mean_text = ''
+        # mean_plt_text = plt.gcf().text(0.175, 0.85, mean_text,
+        #                                 fontsize=ax_fntsz-2, ha='left', va='bottom')
+        # add all features to current frame
+        # frames.append([image, title_plt_text, mean_plt_text])
+        voltMap_feature_ls = make_voltMap_frame(ax, voltMaps, i, vbounds,
+                                                colormap, ax_fntsz, includeMeanVolt)
+        frames.append(voltMap_feature_ls + [title_plt_text])
+    # add the suppressing text
+    if suppress_thresh:
+        suppress_txt = plt.gcf().text(0.825, 0.85, 'Suppressing voltages below: {} V'\
+                                        .format(suppress_thresh),
+                                fontsize=ax_fntsz-2, ha='right', va='bottom')
+    # attach static colorbar
+    cbar = fig.colorbar(frames[0][0], cax=cax)
+    cbar.set_label(cbar_title, fontsize=ax_fntsz, labelpad=10)
+    fig.subplots_adjust(top=0.85, hspace=0.5, wspace=0.8)
+    # adjust tick labels
+    ax.set_xticks([i for i in range(voltMaps.shape[2])])
+    ax.set_yticks([i for i in range(voltMaps.shape[1])])
+    ax.set_xticklabels([i+1 for i in range(voltMaps.shape[2])])
+    ax.set_yticklabels([i+1 for i in range(voltMaps.shape[1])])
+    add_cell_labels(ax, ax_fntsz, voltMaps, border_color=cell_border_color, cell_labels=False)
+    # create animation
+    ani = animation.ArtistAnimation(fig, frames, interval=frame_time, blit=False,
+                                    repeat=repeat_bool)
+    # fps = int(1 / (frame_time/1000))
+    fps = 1 / (frame_time/1000)
+    if dispSingle:
+        ani = fig
+        print('dispSingle is True')
+    return ani, fps # return animation and frames per second for saving to GIF
 
-def displayPolling(voltMaps_input, date, voltTimes_input=np.array([]), suppress_thresh=None,
+
+def displayPolling(voltMaps_input, date='', voltTimes_input=np.array([]), suppress_thresh=None,
                     imbounds=None, vbounds=None, colormap='turbo',
                     figsize=None, title_fntsz=14, ax_fntsz=12,
                     global_title='', cbar_title='Voltage (V)',
                     x_title='Column',
                     y_title='Row',
-                    frame_time=1000, repeat_bool=False, includeMeanVolt=True):
+                    frame_time=1000, repeat_bool=False, includeMeanVolt=True,
+                    cell_border_color='white'):
     voltMaps, voltTimes = np.copy(voltMaps_input), np.copy(voltTimes_input)
     # if a single 2D voltmap is given, convert it to a 3D array
     if voltMaps.ndim < 3: voltMaps = iff.conv_2D_to_3D(voltMaps)
@@ -500,10 +619,11 @@ def displayPolling(voltMaps_input, date, voltTimes_input=np.array([]), suppress_
     ubnd, lbnd, dispSingle = get_imbounds(imbounds, map_nos, [voltMaps]) # get imbounds
     frames = []
     for i in range(lbnd, ubnd): # create frames for animation
-        image = ax.imshow(voltMaps[i], extent=extent, aspect='equal',
-                            cmap=colormap, vmin=vbounds[0], vmax=vbounds[1])
+        # image = ax.imshow(voltMaps[i], extent=extent, aspect='equal',
+        #                     cmap=colormap, vmin=vbounds[0], vmax=vbounds[1])
         # make the animated title text
-        date_text = '\nDate: {}'.format(date)
+        if date != '': date_text = '\nDate: {}'.format(date)
+        else: date_text = ''
         mapNo_text = '\nMap #: {}'.format(map_nos[i])
         if voltTimes.size == 0: volt_text = ''
         else: volt_text = ', t = {:.2f} {}'.format(voltTimes[i], 'min')
@@ -513,12 +633,14 @@ def displayPolling(voltMaps_input, date, voltTimes_input=np.array([]), suppress_
         title_plt_text = plt.gcf().text(0.5, 0.94, combined_text, fontsize=title_fntsz,
                                 ha='center', va='center')
         # include the mean value of voltMap?
-        if includeMeanVolt: mean_text = 'Mean: {:.2f} V'.format(np.nanmean(voltMaps[i]))
-        else: mean_text = ''
-        mean_plt_text = plt.gcf().text(0.175, 0.85, mean_text,
-                                        fontsize=ax_fntsz-2, ha='left', va='bottom')
+        # if includeMeanVolt: mean_text = 'Mean: {:.2f} V'.format(np.nanmean(voltMaps[i]))
+        # else: mean_text = ''
+        # mean_plt_text = plt.gcf().text(0.175, 0.85, mean_text,
+        #                                 fontsize=ax_fntsz-2, ha='left', va='bottom')
+        voltMap_feature_ls = make_voltMap_frame(ax, voltMaps, i, vbounds,
+                                                colormap, ax_fntsz, includeMeanVolt)
         # add all features to current frame
-        frames.append([image, title_plt_text, mean_plt_text])
+        frames.append(voltMap_feature_ls+[title_plt_text])
     # add the suppressing text
     if suppress_thresh:
         suppress_txt = plt.gcf().text(0.825, 0.85, 'Suppressing voltages below: {} V'\
@@ -533,7 +655,7 @@ def displayPolling(voltMaps_input, date, voltTimes_input=np.array([]), suppress_
     ax.set_yticks([i for i in range(voltMaps.shape[1])])
     ax.set_xticklabels([i+1 for i in range(voltMaps.shape[2])])
     ax.set_yticklabels([i+1 for i in range(voltMaps.shape[1])])
-    add_cell_labels(ax, ax_fntsz, voltMaps)
+    add_cell_labels(ax, ax_fntsz, voltMaps, border_color=cell_border_color, cell_labels=False)
     # create animation
     ani = animation.ArtistAnimation(fig, frames, interval=frame_time, blit=False,
                                     repeat=repeat_bool)
@@ -542,13 +664,17 @@ def displayPolling(voltMaps_input, date, voltTimes_input=np.array([]), suppress_
     if dispSingle: ani = fig
     return ani, fps # return animation and frames per second for saving to GIF
 
-def add_cell_labels(ax, fontsize, voltMaps, cell_labels=True, cell_borders=True):
+def add_cell_labels(ax, fontsize, voltMaps, cell_labels=True, cell_borders=True,
+                    border_color='white'):
     if cell_labels:
         for i in cc.cell_order_array.flatten():
             args = np.argwhere(cc.cell_order_array==i)[0]
             row, col = args[0], args[1]
             color = 'white'
             if np.any(np.isnan(voltMaps[:, row, col])): color='black'
+            # print('i:', i, 'row:', row, 'col:', col)
+            # print(voltMaps.shape)
+            # if voltMaps[int(i-1)][row][col] > (np.nanmax(voltMaps)-np.nanmin(voltMaps))/2: color='black'
             ax.text(col, row, int(i), color=color, ha='center', va='center',
                     fontsize=fontsize-6)
     if cell_borders:
@@ -556,12 +682,12 @@ def add_cell_labels(ax, fontsize, voltMaps, cell_labels=True, cell_borders=True)
         col_nums = np.array([i for i in range(voltMaps.shape[2])])
         hline_locs = (row_nums[1:]+row_nums[:-1]) / 2
         vline_locs = (col_nums[1:]+col_nums[:-1]) / 2
-        for loc in hline_locs: ax.axhline(loc, color='white')
-        for loc in vline_locs: ax.axvline(loc, color='white')
+        for loc in hline_locs: ax.axhline(loc, color=border_color)
+        for loc in vline_locs: ax.axvline(loc, color=border_color)
         # print(hline_locs)
 
 def displayIFs_wVoltMaps(input_cells, ifs, dx, date='', imbounds=None, voltMap_vbounds=None, if_vbounds=None,
-                        voltMap_colormap='jet', if_colormap='jet', suppress_thresh=None, voltMap_type='high',
+                        voltMap_colormap='plasma', if_colormap='jet', suppress_thresh=None, voltMap_type='high',
                         figsize=None, title_fntsz=14, ax_fntsz=12,
                         plot_titles = None,
                         global_title='', cbar_titles=['Voltage (V)', 'Figure (microns)'],
@@ -570,7 +696,8 @@ def displayIFs_wVoltMaps(input_cells, ifs, dx, date='', imbounds=None, voltMap_v
                         frame_time=500, repeat_bool=False, dispR=False,
                         cell_nos=None, stats=False, dispMaxInds=None, dispBoxCoords=None,
                         linecolors=['white', 'fuchsia'], details=None, includeCables=False,
-                        merits=None, showImageNumber=True, includeMeanVolt=False):
+                        merits=None, showImageNumber=True, includeMeanVolt=False, stats_textbox_coords=[0.03, 0.7],
+                        show_maxInd_textbox=True, cell_border_color='white', stats_units=['um']):
     cells = copy.deepcopy(input_cells)
     # get a 3D array of voltMaps
     if len(cells) > 1:
@@ -595,15 +722,19 @@ def displayIFs_wVoltMaps(input_cells, ifs, dx, date='', imbounds=None, voltMap_v
         plot_titles = [''] * N_plots
     if not x_titles: x_titles = ['Column'] + ['Azimuthal Dimension (mm)'] * len(ifs_ls)
     if not y_titles: y_titles = ['Row'] + ['Axial Dimension (mm)'] * len(ifs_ls)
+    if not isinstance(stats_units, list):
+        stats_units = [stats_units]
+    if len(stats_units) < N_plots:
+        stats_units = stats_units * ((N_plots - len(stats_units)) + 1)
     axs, caxs = init_subplots(N_plots, fig, plot_titles, # initalize subplots
                             x_titles, y_titles, title_fntsz, ax_fntsz)
 
     # configure the ticks and static text for the voltMap subplot
-    configure_voltMap_subplot(axs[0], voltMaps, suppress_thresh, ax_fntsz)
-    vbounds_ls = get_vbounds(ifs_ls, if_vbounds) # get vbounds for IFs if needed
-
+    configure_voltMap_subplot(axs[0], voltMaps, suppress_thresh, ax_fntsz,
+                                cell_border_color=cell_border_color)
     ubnd, lbnd, dispSingle = get_imbounds(imbounds, cell_nos, ifs_ls) # get imbounds
-    idx_txt, cell_nos = get_index_label(ifs_ls, cell_nos) # "Image #:" or "Cell #:"
+    vbounds_ls = get_vbounds(ifs_ls, if_vbounds, [ubnd, lbnd]) # get vbounds for IFs if needed
+    idx_txt, cell_nos = get_index_label(ifs_ls, cell_nos, None) # "Image #:" or "Cell #:"
     if len(cbar_titles) < N_plots: # get the correct number of cbar titles
         cbar_titles += ['Figure (microns)']*(N_plots-len(cbar_titles))
     rms_ls, ptov_ls = [], []
@@ -617,7 +748,8 @@ def displayIFs_wVoltMaps(input_cells, ifs, dx, date='', imbounds=None, voltMap_v
                                 global_title, idx_txt, cell_nos, title_fntsz,
                                 dispMaxInds, ax_fntsz, stats, rms_ls, ptov_ls, dispBoxCoords,
                                 linecolors, details, includeCables, merits, dispR,
-                                showImageNumber)
+                                showImageNumber, None, stats_textbox_coords, show_maxInd_textbox, stats_units)
+
         voltMap_feature_ls = make_voltMap_frame(axs[0], voltMaps, i, voltMap_vbounds,
                                                 voltMap_colormap, ax_fntsz, includeMeanVolt)
         total_feature_ls = if_feature_ls + voltMap_feature_ls
@@ -646,7 +778,7 @@ def displayIFs_wVoltMaps(input_cells, ifs, dx, date='', imbounds=None, voltMap_v
     if dispSingle: ani = fig
     return ani, fps # return animation and frames per second for saving to GIF
 
-def configure_voltMap_subplot(ax, voltMaps, suppress_thresh, ax_fntsz):
+def configure_voltMap_subplot(ax, voltMaps, suppress_thresh, ax_fntsz, cell_border_color='white'):
     if suppress_thresh:
         suppress_txt = plt.gcf().text(0.5, 0.5, 'Suppressing voltages below: {} V'\
                                         .format(suppress_thresh),
@@ -655,7 +787,7 @@ def configure_voltMap_subplot(ax, voltMaps, suppress_thresh, ax_fntsz):
     ax.set_yticks([i for i in range(voltMaps.shape[1])])
     ax.set_xticklabels([i+1 for i in range(voltMaps.shape[2])])
     ax.set_yticklabels([i+1 for i in range(voltMaps.shape[1])])
-    add_cell_labels(ax, ax_fntsz, voltMaps)
+    add_cell_labels(ax, ax_fntsz, voltMaps, border_color=cell_border_color, cell_labels=False)
 
 def make_voltMap_frame(ax, voltMaps, i, vbounds, colormap, ax_fntsz, includeMeanVolt):
     extent = None
@@ -667,7 +799,18 @@ def make_voltMap_frame(ax, voltMaps, i, vbounds, colormap, ax_fntsz, includeMean
     else: mean_text = ''
     mean_plt_text = plt.gcf().text(0.175, 0.85, mean_text,
                                     fontsize=ax_fntsz-2, ha='left', va='bottom')
-    return [image, mean_plt_text]
+    cell_labels = [] # change the color of cells labeles based on which cell was set to 10 V
+    for j in cc.cell_order_array.flatten():
+        args = np.argwhere(cc.cell_order_array==j)[0]
+        row, col = args[0], args[1]
+        color = 'white'
+        if np.any(np.isnan(voltMaps[i, row, col])):
+            color='black'
+        if voltMaps[i][row][col] > 0.8*(np.nanmax(voltMaps[i])-np.nanmin(voltMaps[i])) + np.nanmin(voltMaps[i]):
+            color='black'
+        cell_label = ax.text(col, row, int(j), color=color, ha='center', va='center', fontsize=ax_fntsz-6)
+        cell_labels.append(cell_label)
+    return [image, mean_plt_text] + cell_labels
 
 
 ##############################################################################

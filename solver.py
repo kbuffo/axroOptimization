@@ -11,13 +11,20 @@ def printer():
 
 def ampMeritFunction(voltages,distortion,ifuncs):
     """Simple merit function calculator.
-    voltages is 1D array of weights for the influence functions
-    distortion is 2D array of distortion map
-    ifuncs is 4D array of influence functions
+    voltages is 1D array of shape (N,) weights for the N number of influence functions.
+    distortion is 1D array of shape (2*j*k,) where (j, k) is the shape of distortion
+    image after the shade has been stripped.
+    ifuncs is 2D array of shape (2*j*k, N), where (j, k) is the shape of a single
+    IF after the shade has been stripped, and N is the number of IFs
     shade is 2D array shade mask
     Simply compute sum(ifuncs*voltages-distortion)**2)
     """
+    print()
+    print('merit voltages shape: {}'.format(voltages.shape))
+    print('merit distortion shape: {}'.format(distortion.shape))
+    print('merit ifuncs shape: {}'.format(ifuncs.shape))
     res = np.mean((np.dot(ifuncs,voltages)-distortion)**2)
+    print('res: {:.3f}'.format(res))
     return res
 
 def ampMeritFunction2(voltages,**kwargs):
@@ -40,6 +47,7 @@ def ampMeritDerivative(voltages,distortion,ifuncs):
     """
     res = np.dot(2*(np.dot(ifuncs,voltages)-distortion),ifuncs)/\
            np.size(distortion)
+    print('derivative res shape: {}'.format(res.shape))
     return res
 
 def ampMeritDerivative2(voltages,f,g,**kwargs):
@@ -88,21 +96,28 @@ def prepareIFs(ifs,dx=None,azweight=.015):
     #Apply derivative if necessary
     #First element of result is axial derivative
     if dx is not None:
+        """
+        line below returns 4D array of shape (2, N, j, k), where the the first
+        dimension indicates axial [0] or azimuthal [1] slope, N is the number
+        of IFs, and (j, k) is the shape of each IF
+        """
         ifs = np.array(np.gradient(ifs,*dx,axis=(1,2)))*180/np.pi*60.**2 / 1000.
-        ifs[1] = ifs[1]*azweight
-        ifs = ifs.transpose(1,0,2,3)
+        ifs[1] = ifs[1]*azweight # decreases the impact of the azimuthal slope
+        ifs = ifs.transpose(1,0,2,3) # changes 4D array shape to be (N, 2, j, k)
         sha = np.shape(ifs)
-        for i in range(sha[0]):
+        for i in range(sha[0]): # subtracts the mean value from each IF
             for j in range(sha[1]):
                 ifs[i,j] = ifs[i,j] - np.nanmean(ifs[i,j])
-        ifs = ifs.reshape((sha[0],sha[1]*sha[2]*sha[3]))
+        ifs = ifs.reshape((sha[0],sha[1]*sha[2]*sha[3])) # changes IF array shape to be (N, 2*j*k)
     else:
         #ifs = ifs.transpose(1,2,0)
         sha = np.shape(ifs)
         for i in range(sha[0]):
             ifs[i] = ifs[i] - np.nanmean(ifs[i])
         ifs = ifs.reshape((sha[0],sha[1]*sha[2]))
-
+    # changes IF array shape to be (2*j*k, N)
+    # Each column is a row-connected axial slope connected with row-connected
+    # azimuthal slope for a single IF.
     return np.transpose(ifs)
 
 def prepareDist(d,dx=None,azweight=0.015,avg_slope_remove = True):
@@ -114,11 +129,18 @@ def prepareDist(d,dx=None,azweight=0.015,avg_slope_remove = True):
     #Apply derivative if necessary
     #First element of result is axial derivative
     if dx is not None:
+        """
+        line below returns 3D array of shape (2, j, k), where the the first
+        dimension indicates axial [0] or azimuthal [1] slope, and (j, k) is the
+        shape of the distortion
+        """
         d = np.array(np.gradient(d,*dx))*180/np.pi*60.**2 / 1000.
-        d[0] = d[0] - np.nanmean(d[0])*avg_slope_remove
-        d[1] = d[1] - np.nanmean(d[1])*avg_slope_remove
-        d[1] = d[1]*azweight
+        d[0] = d[0] - np.nanmean(d[0])*avg_slope_remove # subtract out mean axial slope
+        d[1] = d[1] - np.nanmean(d[1])*avg_slope_remove # subtract out mean azimuth slope
+        d[1] = d[1]*azweight # decreases the impact of the azimuthal slope
 
+    # return row-connected axial slope connected with row-connected azimuthal slope
+    # this is a 1D array of shape (2*j*k,)
     return d.flatten()
 
 def optimizer(distortion,ifs,shade,smin=0.,smax=5.,bounds=None,matlab_opt = False):
@@ -141,9 +163,12 @@ def optimizer(distortion,ifs,shade,smin=0.,smax=5.,bounds=None,matlab_opt = Fals
     if len(distortion) == len(shade):
         ifs = ifs[shade==1]
         distortion = distortion[shade==1]
+        div = 1
+    # covering the case with azimuthal weighting
     elif len(distortion) == 2*len(shade):
         ifs = np.vstack((ifs[:len(shade)][shade==1],ifs[len(shade):][shade==1]))
         distortion = np.concatenate((distortion[:len(shade)][shade==1],distortion[len(shade):][shade==1]))
+        div = 2
     else:
         print('Distortion not an expected length relative to the shade -- investigation needed.')
         pdb.set_trace()

@@ -4,7 +4,7 @@ from matplotlib.pyplot import *
 import pdb
 
 def printer():
-    print('Hello cell mapping!')
+    print('Hello conic solve!')
 
 #Return radius of mirror at arbitrary z coordinate
 def primrad(z,r0,z0,psi=1.):

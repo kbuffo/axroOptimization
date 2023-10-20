@@ -21,7 +21,7 @@ def primaryPSF(d,z,l,x0,wave,foc,R0,graze):
         z: position from the mirror (now a matrix)
         l: length of mirror
         x0: axial displacement (x0=0 => on axis)
-        wave: wavelength of radiation
+        wave: wavelength of radiation (mm)
         foc: focal length
         R0: radius of mirror at z=f
         graze: grazing incidence angle
