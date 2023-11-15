@@ -6,6 +6,7 @@ import axroOptimization.solver as slv
 import axroOptimization.conicsolve as conic
 import axroOptimization.correction_utility_functions as cuf
 import axroHFDFCpy.construct_connections as cc
+import time
 
 import pdb
 
@@ -137,7 +138,7 @@ def correctHFDFC3(d,ifs,shade=None,dx=None,azweight=.015,smax=5.,\
     return cor3,volt
 
 def correct_distortions(dist_maps, ifs, dx, shademask=None, smax=1.0,
-                        computeInitialPerformances=True):
+                        computeInitialPerformances=True, timeit=True):
     """
     Compute the optimal figure/slope change for a given input distortion(s) and calculate
     the inital and final performances of the X-ray mirror along with voltages needed for correction.
@@ -170,7 +171,7 @@ def correct_distortions(dist_maps, ifs, dx, shademask=None, smax=1.0,
         N indexes the distortion map and M indexes the cell number for that distortion map
         volts_array[i, :] is the array of volts needed to produce fig_change_maps[i] given dist_fig_maps[i]
     """
-
+    func_start_time = time.time()
     dist_fig_maps = [] # the shaded distortion maps in figure space
     dist_slp_maps = [] # the shaded distortion maps in slope space
     # initial_performances = [] # list of performances of distortion maps
@@ -187,6 +188,7 @@ def correct_distortions(dist_maps, ifs, dx, shademask=None, smax=1.0,
     merits = np.full((dist_maps.shape[0], 3, 2), np.nan) # the array of E68 and HPD values
 
     for i in range(dist_maps.shape[0]):
+        iter_start_time = time.time()
         print('-'*15+'Map: {}'.format(i)+'-'*15)
         # strip the shade from the distortion map
         if shademask is not None:
@@ -237,6 +239,8 @@ def correct_distortions(dist_maps, ifs, dx, shademask=None, smax=1.0,
         # initial_performances.append([initial_performance[0], initial_performance[1]]) # [E68, HPD]
         # final_performances.append([final_performance[0], final_performance[1]])
         volts_array[i, :] = np.array(volts)
+        if timeit:
+            print('Map {} time elapsed: {:.3f} min'.format(i, (time.time()-iter_start_time)/60.))
 
     # convert figure maps to 3D arrays
     if len(dist_fig_maps) > 1:
@@ -253,6 +257,10 @@ def correct_distortions(dist_maps, ifs, dx, shademask=None, smax=1.0,
         slope_change_maps = np.reshape(slope_change_maps, (1, slope_change_maps[0].shape[0], slope_change_maps[0].shape[1]))
         corrected_fig_maps = np.reshape(corrected_fig_maps, (1, corrected_fig_maps[0].shape[0], corrected_fig_maps[0].shape[1]))
         corrected_slp_maps = np.reshape(corrected_slp_maps, (1, corrected_slp_maps[0].shape[0], corrected_slp_maps[0].shape[1]))
+
+    if timeit:
+        min_elapsed = (time.time()-func_start_time)/60.
+        print('Function time elapsed: {:.3f} min = {:.3f} hours'.format(min_elapsed, min_elapsed/60.))
 
     return dist_fig_maps, dist_slp_maps, fig_change_maps, slope_change_maps, \
             corrected_fig_maps, corrected_slp_maps, merits, volts_array

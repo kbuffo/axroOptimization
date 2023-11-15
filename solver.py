@@ -1,6 +1,7 @@
 import numpy as np
 import pdb,os
 from scipy.optimize import fmin_slsqp,least_squares
+from axroOptimization.nyquist_solver import nyquistOptimizer
 import astropy.io.fits as pyfits
 import scipy.interpolate as interp
 import utilities.transformations as tr
@@ -19,12 +20,12 @@ def ampMeritFunction(voltages,distortion,ifuncs):
     shade is 2D array shade mask
     Simply compute sum(ifuncs*voltages-distortion)**2)
     """
-    print()
-    print('merit voltages shape: {}'.format(voltages.shape))
-    print('merit distortion shape: {}'.format(distortion.shape))
-    print('merit ifuncs shape: {}'.format(ifuncs.shape))
+    # print()
+    # print('merit voltages shape: {}'.format(voltages.shape))
+    # print('merit distortion shape: {}'.format(distortion.shape))
+    # print('merit ifuncs shape: {}'.format(ifuncs.shape))
     res = np.mean((np.dot(ifuncs,voltages)-distortion)**2)
-    print('res: {:.3f}'.format(res))
+    # print('res: {:.3f}'.format(res))
     return res
 
 def ampMeritFunction2(voltages,**kwargs):
@@ -47,7 +48,7 @@ def ampMeritDerivative(voltages,distortion,ifuncs):
     """
     res = np.dot(2*(np.dot(ifuncs,voltages)-distortion),ifuncs)/\
            np.size(distortion)
-    print('derivative res shape: {}'.format(res.shape))
+    # print('derivative res shape: {}'.format(res.shape))
     return res
 
 def ampMeritDerivative2(voltages,f,g,**kwargs):
