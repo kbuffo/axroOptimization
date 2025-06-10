@@ -5,6 +5,7 @@ from axroOptimization.nyquist_solver import nyquistOptimizer
 import astropy.io.fits as pyfits
 import scipy.interpolate as interp
 import utilities.transformations as tr
+import utilities.fourier as fourier
 
 #from axroOptimization.matlab_funcs import matlab_lsqlin_optimization
 def printer():
@@ -48,7 +49,7 @@ def ampMeritDerivative(voltages,distortion,ifuncs):
     """
     res = np.dot(2*(np.dot(ifuncs,voltages)-distortion),ifuncs)/\
            np.size(distortion)
-    # print('derivative res shape: {}'.format(res.shape))
+    #print('derivative res shape: {}'.format(res.shape))
     return res
 
 def ampMeritDerivative2(voltages,f,g,**kwargs):
@@ -89,7 +90,39 @@ def rawOptimizer(ifs,dist,bounds=None,smin=0.,smax=5.):
 
     return sol,optv
 
-def prepareIFs(ifs,dx=None,azweight=.015):
+#def prepareIFs(ifs,dx=None,azweight=.015):
+#    """
+#    Put IF arrays in format required by optimizer.
+#    If dx is not None, apply derivative.
+#    """
+#    #Apply derivative if necessary
+#    #First element of result is axial derivative
+#    if dx is not None:
+#        """
+#        line below returns 4D array of shape (2, N, j, k), where the the first
+#        dimension indicates axial [0] or azimuthal [1] slope, N is the number
+#        of IFs, and (j, k) is the shape of each IF
+#        """
+#        ifs = np.array(np.gradient(ifs,*dx,axis=(1,2)))*180/np.pi*60.**2 / 1000.
+#        ifs[1] = ifs[1]*azweight # decreases the impact of the azimuthal slope
+#        ifs = ifs.transpose(1,0,2,3) # changes 4D array shape to be (N, 2, j, k)
+#        sha = np.shape(ifs)
+#        for i in range(sha[0]): # subtracts the mean value from each IF
+#            for j in range(sha[1]):
+#                ifs[i,j] = ifs[i,j] - np.nanmean(ifs[i,j])
+#        ifs = ifs.reshape((sha[0],sha[1]*sha[2]*sha[3])) # changes IF array shape to be (N, 2*j*k)
+#    else:
+#        #ifs = ifs.transpose(1,2,0)
+#        sha = np.shape(ifs)
+#        for i in range(sha[0]):
+#            ifs[i] = ifs[i] - np.nanmean(ifs[i])
+#        ifs = ifs.reshape((sha[0],sha[1]*sha[2]))
+#    # changes IF array shape to be (2*j*k, N)
+#    # Each column is a row-connected axial slope connected with row-connected
+#    # azimuthal slope for a single IF.
+#    return np.transpose(ifs)
+
+def prepareIFs(ifs,dx=None,azweight=.015,slp_ifs=[None,None]):
     """
     Put IF arrays in format required by optimizer.
     If dx is not None, apply derivative.
@@ -102,7 +135,11 @@ def prepareIFs(ifs,dx=None,azweight=.015):
         dimension indicates axial [0] or azimuthal [1] slope, N is the number
         of IFs, and (j, k) is the shape of each IF
         """
-        ifs = np.array(np.gradient(ifs,*dx,axis=(1,2)))*180/np.pi*60.**2 / 1000.
+        if slp_ifs[0] is None and slp_ifs[1] is None:
+            ifs = np.array(np.gradient(ifs,*dx,axis=(1,2)))*180/np.pi*60.**2 / 1000.
+        else:
+            ifs = np.stack(slp_ifs, axis=0)
+            print('stacked ifs shape:', ifs.shape)
         ifs[1] = ifs[1]*azweight # decreases the impact of the azimuthal slope
         ifs = ifs.transpose(1,0,2,3) # changes 4D array shape to be (N, 2, j, k)
         sha = np.shape(ifs)
@@ -116,6 +153,7 @@ def prepareIFs(ifs,dx=None,azweight=.015):
         for i in range(sha[0]):
             ifs[i] = ifs[i] - np.nanmean(ifs[i])
         ifs = ifs.reshape((sha[0],sha[1]*sha[2]))
+    #print('ifs shape before final transpose:', ifs.shape)
     # changes IF array shape to be (2*j*k, N)
     # Each column is a row-connected axial slope connected with row-connected
     # azimuthal slope for a single IF.
@@ -144,7 +182,8 @@ def prepareDist(d,dx=None,azweight=0.015,avg_slope_remove = True):
     # this is a 1D array of shape (2*j*k,)
     return d.flatten()
 
-def optimizer(distortion,ifs,shade,smin=0.,smax=5.,bounds=None,matlab_opt = False):
+def optimizer(distortion,ifs,shade,smin=0.,smax=5.,bounds=None,matlab_opt=False, 
+              azweight=None, correctionShape=None, v0=None, dx=None, slp_ifs=[None, None]):
     """
     Cleaner implementation of optimizer. ifs and distortion should
     already be in whatever form (amplitude or slope) desired.
@@ -185,6 +224,9 @@ def optimizer(distortion,ifs,shade,smin=0.,smax=5.,bounds=None,matlab_opt = Fals
         for i in range(np.shape(ifs)[1]):
             bounds.append((smin,smax))
 
+    if v0 is None:
+        v0 = np.zeros(np.shape(ifs)[1])
+
     #np.savetxt('ifs.txt',ifs)
     #np.savetxt('dist.txt',distortion)
 
@@ -193,14 +235,16 @@ def optimizer(distortion,ifs,shade,smin=0.,smax=5.,bounds=None,matlab_opt = Fals
 
     #Call optimizer algorithm
     else:
-        optv = fmin_slsqp(ampMeritFunction,np.zeros(np.shape(ifs)[1]),\
+        optv = fmin_slsqp(ampMeritFunction,v0,\
                           bounds=bounds,args=(distortion,ifs),\
                           iprint=2,fprime=ampMeritDerivative,iter=1000,\
                           acc=1.e-10, disp=False)
     return optv
 
-def correctDistortion(dist,ifs,shade,dx=None,azweight=.015,smax=5.,\
-                      bounds=None,avg_slope_remove = True,matlab_opt = False):
+def correctDistortion(dist, ifs, shade, dx=None, azweight=.015, smax=5.,\
+                      bounds=None, avg_slope_remove=True, matlab_opt=False, 
+                      optimizer_function=nyquistOptimizer, meritFunc='nyquistMeritFunction',
+                      correctionShape=None, v0=None, slp_ifs=[None,None], nyquistFreq=0.1):
     """
     Wrapper function to apply and evaluate a correction
     on distortion data.
@@ -215,11 +259,13 @@ def correctDistortion(dist,ifs,shade,dx=None,azweight=.015,smax=5.,\
 
     #Prepare arrays
     distp = prepareDist(dist,dx=dx,azweight=azweight,avg_slope_remove = avg_slope_remove)
-    ifsp = prepareIFs(ifs,dx=dx,azweight=azweight)
+    ifsp = prepareIFs(ifs,dx=dx,azweight=azweight, slp_ifs=slp_ifs)
     shadep = prepareDist(shade)
 
     #Run optimizer
-    res = optimizer(-distp,ifsp,shadep,smax=smax,bounds=bounds,matlab_opt = matlab_opt)
+    res = optimizer_function(-distp,ifsp,shadep,smax=smax,bounds=bounds,matlab_opt=matlab_opt, 
+                             dx=dx, azweight=azweight, correctionShape=correctionShape, v0=v0, 
+                             meritFunc=meritFunc, nyquistFreq=nyquistFreq)
 
     return res
 

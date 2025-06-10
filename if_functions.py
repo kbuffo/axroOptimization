@@ -3,6 +3,12 @@ from scipy import ndimage as nd
 from scipy.interpolate import griddata
 from operator import itemgetter
 from itertools import chain
+import matplotlib.colors as mcolors
+import math
+from scipy import integrate
+from scipy.signal import savgol_filter
+import random
+import time
 import copy
 from astropy.io import fits as pyfits
 import matplotlib.pyplot as plt
@@ -16,8 +22,8 @@ import utilities.figure_plotting as fp
 import imaging.man as man
 import imaging.analysis as alsis
 import imaging.stitch as stitch
-import axroOptimization.evaluateMirrors as eva
-import axroOptimization.solver as solver
+#import axroOptimization.evaluateMirrors as eva
+#import axroOptimization.solver as solver
 import axroOptimization.anime_functions as anime
 try: import construct_connections as cc
 except: import axroHFDFCpy.construct_connections as cc
@@ -229,6 +235,39 @@ def realign_maxInds(input_cells, dx):
         cell.boxCoord = new_boxCoords[i]
     return cells
 
+def savgol_filter_ifs(input_ifs, shademask, window_length, polyorder, shd_ifs=None, filterAxis=0):
+    """
+    Applies a Savitzky-Golay filter to a set of IFs in the region denoted by shademask 
+    (since you cannot apply a savgol filter to an array with NaNs).
+    window_length: int, specifies a square window in pixels to apply each local polyorder fit
+    polyorder: int, specifies the order of each local polynomial fit applied
+    shd_ifs: (optional), if specified, saves time by not having to strip the shade from input_ifs and applying the filter
+    to the remaining the area of the IFs.
+    filterAxis: int, specifies the axis (direction) to apply the filter.
+    """
+    
+    ifs = np.copy(input_ifs)
+    if ifs[0].shape != shademask.shape:
+        print('Error: 2D IF and shademask are different shapes!')
+        return None
+    if shd_ifs is None:
+        # strip the shade from the IFs (no nans allowed for applying filter)
+        print('Stripping shade from IFs...')
+        shd_ifs = np.stack([cuf.stripWithShade(ifs[i], shademask) for i in range(ifs.shape[0])], axis=0)
+    # apply filter
+    shd_filter_ifs = np.stack([savgol_filter(shd_ifs[i], window_length, polyorder, axis=filterAxis) 
+                           for i in range(shd_ifs.shape[0])], axis=0)
+    pad_y = int(np.abs(ifs.shape[1]-shd_filter_ifs.shape[1])/2)
+    pad_x = int(np.abs(ifs.shape[2]-shd_filter_ifs.shape[2])/2)
+    # pad the filtered ifs to be the same size as the originals
+    pad_filter_ifs = np.stack([man.padRect(shd_filter_ifs[i], nan_num=pad_y) for i in range(shd_filter_ifs.shape[0])], 
+                              axis=0)
+    shademask_stack = np.stack([shademask]*ifs.shape[0], axis=0)
+    # replace padded region with original data
+    filter_ifs = np.where(shademask_stack==1, pad_filter_ifs, ifs)
+    return filter_ifs, shd_filter_ifs
+
+
 ##############################################################################
 ##################### ARRAY MASKING FUNCTIONS ################################
 ##############################################################################
@@ -414,67 +453,141 @@ def cells_stats_hist(cells, bins, x_labels, plot_titles=None, global_title=None,
     return fig
 
 
-def stats_hist(stats, bins, x_labels, plot_titles=None, global_title=None,
-                figsize=(8,5), colors=None, N_xticks=20, disp_Nbins=False,
-                showMean=None, ylog=False, edgecolor=None, ax_fontsize=12,
-                title_fontsize=14, xtick_fontsize=None):
+def stats_hist(stats, 
+               N_bins=None,
+               disp_NBins=False,
+               x_labels=None,
+               y_labels='Number of Cells',
+               plot_titles=None, 
+               global_title=None,
+               figsize=(8,5), 
+               colors='black', 
+               N_xticks=20,
+               N_yticks=8,
+               showMean=True,
+               stats_units='um',
+               N_stats_sigFigs=2,
+               ylog=False, 
+               edgecolor=None, 
+               ax_fontsize=12,
+               legend_fontsize=12,
+               xtickSize=None,
+               ytickSize=None,
+               xtickLabelSize=None,
+               ytickLabelSize=None,
+               xtickRotation=None,
+               ytickRotation=None,
+               plotTitle_fontsize=12,
+               figTitle_fontsize=14):
     """
     Returns a row of histograms displaying the distributions of different stats.
     stats: list of 1D arrays that contain a set of stats. Each element of the list gets its own plot.
-    x_labels: list of titles for x-axis of each plot.
-    plot_titles: list of titles for each plot.
+    N_bins: int or list of ints the same length as stats that specifies the number of bins for each plot.
+    x_labels: str or list of str for x-axis of each plot.
+    y_labels: str or list of str for y-axis of each plot.
+    plot_titles: str or list of titles for each plot.
     global_title: title for overall figure.
-    color: list of colors of histogram bars.
-    N_xticks: number of xtick markers to generate
-    """
+    colors: str or list of str colors of histogram bars.
+    N_xticks: int or list of ints, number of xtick markers to generate for each plot
+    N_ytick: int or list of ints, number of ytick markers to generate for each plot
+    showMean: if True, display the mean value in the legend of each plot
+    ylog: if True, convert y axes to log scale
+    edgecolor: str or list of str, the edge color of the historgram bars for each plot
+    ax_fontsize: the fontsize of the axis labels
 
+    """
+    var_ls = []
+    for var in [N_bins, x_labels, y_labels, plot_titles, colors, N_xticks, N_yticks, showMean, stats_units, 
+                N_stats_sigFigs, ylog, edgecolor, xtickSize, ax_fontsize, legend_fontsize, xtickSize, ytickSize, 
+                xtickLabelSize, ytickLabelSize, xtickRotation, ytickRotation, plotTitle_fontsize]:
+        if type(var) is not list:
+            var = [var] * len(stats)
+        if len(var) != len(stats):
+            var *= len(stats)
+        var_ls.append(var)
+    N_bins, x_labels, y_labels, plot_titles, colors, N_xticks, N_yticks, showMean, stats_units, N_stats_sigFigs, \
+    ylog, edgecolor, xtickSize, ax_fontsize, legend_fontsize, xtickSize, ytickSize, xtickLabelSize, ytickLabelSize, \
+    xtickRotation, ytickRotation, plotTitle_fontsize = var_ls
     fig, axs = plt.subplots(1, len(stats), figsize=figsize)
     if len(stats) == 1: axs = np.array(axs)
-    Nbins_text = ''
-    if disp_Nbins: Nbins_text = '\nN Bins: {}'.format(bins)
-    if global_title: fig.suptitle(global_title, fontsize=title_fontsize)
-    if not plot_titles: plot_titles = [''] * len(stats)
-    if not colors: colors = ['limegreen'] * len(stats)
-    if not xtick_fontsize: xtick_fontsize = 10-(2*(int(N_xticks/10)-1))
+    if disp_NBins:
+        Nbins_text = ['\nNumber of Bins: {}'.format(N_bins[i]) for i in range(len(N_bins))]
+    else:
+        print('N_bins:', N_bins)
+        Nbins_text = ['' for i in range(len(N_bins))]
+    if global_title: 
+        fig.suptitle(global_title, fontsize=figTitle_fontsize)
     for i, ax in enumerate(axs.flat):
-        ax.set_title(plot_titles[i]+Nbins_text, fontsize=title_fontsize)
-        ax.set_xlabel(x_labels[i], fontsize=ax_fontsize)
-        ax.set_ylabel('# of Cells', fontsize=ax_fontsize)
-        ax.hist(stats[i], bins=bins, range=None, color=colors[i], edgecolor=edgecolor,
-                label='mean: {:.2f} {}\nmedian: {:.2f} {}'.format(np.nanmean(stats[i]), showMean, np.nanmedian(stats[i]), showMean))
-        ax.tick_params(axis='y', labelsize=xtick_fontsize)
-        xticks = np.linspace(np.nanmin(stats[i]), np.nanmax(stats[i]), num=N_xticks)
-        xtick_labels = xticks.round(2)
-        ax.set_xticks(ticks=xticks, labels=xtick_labels, rotation=45, fontsize=xtick_fontsize)
-        if ylog: ax.set_yscale('log')
-        if showMean is not None: ax.legend()
+        ax.set_title(plot_titles[i]+Nbins_text[i], fontsize=plotTitle_fontsize[i])
+        ax.set_xlabel(x_labels[i], fontsize=ax_fontsize[i])
+        ax.set_ylabel(y_labels[i], fontsize=ax_fontsize[i])
+        n, bins, _ = ax.hist(stats[i], bins=N_bins[i], range=None, color=colors[i], edgecolor=edgecolor[i],
+                          label='mean: {} {}\nmedian: {} {}'.format(np.round(np.nanmean(stats[i]), N_stats_sigFigs[i]), 
+                                                                            stats_units[i],
+                                                                            np.round(np.nanmedian(stats[i]), N_stats_sigFigs[i]), 
+                                                                            stats_units[i]))
+        ax.tick_params(axis='x', width=xtickSize[i], labelsize=xtickLabelSize[i])
+        ax.tick_params(axis='y', width=ytickSize[i], labelsize=ytickLabelSize[i])
+        xticks = np.linspace(np.nanmin(bins), np.nanmax(bins), num=N_xticks[i]).astype('int')
+        yticks = np.linspace(0, np.nanmax(n)+1, num=N_yticks[i]).astype('int')
+        ax.set_xticks(ticks=xticks, labels=xticks, rotation=xtickRotation[i], fontsize=xtickLabelSize[i])
+        ax.set_yticks(ticks=yticks, labels=yticks, rotation=ytickRotation[i], fontsize=ytickLabelSize[i])
+        if ylog[i]: 
+            ax.set_yscale('log')
+        if showMean[i]:
+            ax.legend()
     # fig.tight_layout(rect=[0, 0, 1, 0.95])
     fig.tight_layout()
     return fig
 
-def stats_spatial_plot(input_cells, date='', vbounds=None, value_type='both',
-                        suppress_thresh=None, figsize=None, title_fntsz=14, ax_fntsz=12,
-                        plot_titles=None, global_title='',
-                        cbar_titles=['RMS (microns)', 'PV (microns)'],
-                        x_titles=None, y_titles=None, includeMeanMedian_textbox=False,
-                        colormap='plasma'):
+def stats_spatial_plot(input_cells, 
+                       date='', 
+                       vbounds=None, 
+                       value_type='both',
+                       convert_to_nm=False,
+                       suppress_thresh=None, 
+                       figsize=None,
+                       font_color_switch_frac=0.75,
+                       title_fntsz=14, 
+                       ax_fntsz=12,
+                       tickLabelSize=None,
+                       tickSize=None,
+                       xtickLabelRotation=None, 
+                       ytickLabelRotation=None,
+                       cellNoSize=None,
+                       plot_titles=None, global_title='',
+                       cbar_titles=['RMS (microns)', 'PV (microns)'],
+                       x_titles=None, 
+                       y_titles=None, 
+                       includeMeanMedian_textbox=False,
+                       colormap='plasma'):
     cells = copy.deepcopy(input_cells)
-    if value_type == 'both': N_plots = 2
-    elif value_type == 'RMS' or value_type == 'PV': N_plots = 1
+    if cellNoSize is None:
+        cellNoSize = ax_fntsz
+    if value_type == 'both': 
+        N_plots = 2
+    elif value_type == 'RMS' or value_type == 'PV': 
+        N_plots = 1
     else:
         print("You must specify the value type as 'RMS', 'PV', or 'both'.")
         return None
-    if '_' in date: date = date.replace('_', '')
-    if not figsize: figsize = (7*N_plots, 6)
+    if '_' in date: 
+        date = date.replace('_', '')
+    if not figsize: 
+        figsize = (7*N_plots, 6)
     fig = plt.figure(figsize=figsize)
-    if not plot_titles: plot_titles = [''] * N_plots
-    if not x_titles: x_titles = ['Column'] * N_plots
-    if not y_titles: y_titles = ['Row'] * N_plots
-    if value_type == 'PV': cbar_titles = ['RMS (microns)', 'PV (microns)']
-    axs, caxs = anime.init_subplots(N_plots, fig, plot_titles,
-                                    x_titles, y_titles, title_fntsz, ax_fntsz)
+    if not plot_titles: 
+        plot_titles = [''] * N_plots
+    if not x_titles: 
+        x_titles = ['Column'] * N_plots
+    if not y_titles: 
+        y_titles = ['Row'] * N_plots
+    axs, caxs = anime.init_subplots(N_plots, fig, plot_titles, x_titles, y_titles, 
+                                    title_fntsz, ax_fntsz, tickLabelSize=tickLabelSize,
+                                    tickSize=tickSize,xtickLabelRotation=xtickLabelRotation, 
+                                    ytickLabelRotation=ytickLabelRotation)
     fig.suptitle(global_title, fontsize=title_fntsz)
-    value_arrays = make_RMS_PV_arrays(cells, value_type)
+    value_arrays = make_RMS_PV_arrays(cells, value_type, convert_to_nm=convert_to_nm)
     if not vbounds: # generate unique vbounds for each plot
         vbounds_ls = []
         for value_array in value_arrays:
@@ -501,12 +614,13 @@ def stats_spatial_plot(input_cells, date='', vbounds=None, value_type='both',
         anime.add_cell_labels(ax, ax_fntsz, cell_label_array, cell_labels=False,
                                 border_color='black')
         # explictly add cell labels
-        add_cell_labels(ax, ax_fntsz, value_array)
+        add_cell_labels(ax, cellNoSize, value_arrays[j], font_color_switch_frac=font_color_switch_frac)
         if includeMeanMedian_textbox:
             mean_text = 'Mean: {:.2f} um'.format(np.nanmean(value_arrays[j]))
             median_text = 'Median: {:.2f} um'.format(np.nanmedian(value_arrays[j]))
         cbar = fig.colorbar(image, cax=caxs[j])
         cbar.set_label(cbar_titles[j], fontsize=ax_fntsz)
+        cbar.ax.tick_params(width=tickSize, labelsize=tickLabelSize)
 
     if date != '':
         date_text = plt.gcf().text(0.80, 0.98, 'Date: {}'.format(date), fontsize=title_fntsz,
@@ -514,34 +628,59 @@ def stats_spatial_plot(input_cells, date='', vbounds=None, value_type='both',
     fig.subplots_adjust(top=0.87, hspace=0.5, wspace=0.4)
     return fig
 
-def make_RMS_PV_arrays(cells, value_type):
+def make_RMS_PV_arrays(cells, value_type, convert_to_nm=False):
     rms_map, pv_map = np.full(cc.cell_order_array.shape, np.nan), np.full(cc.cell_order_array.shape, np.nan)
     for i in cc.cell_order_array.flatten():
         args = np.argwhere(cc.cell_order_array==i)[0]
         row, col = args[0], args[1]
         for cell in cells:
+            #print('Cell {} PV: {:.3f}'.format(cell.no, cell.pv))
             if cell.no == i:
                 rms_map[row][col] = cell.rms
                 pv_map[row][col] = cell.pv
     if value_type == 'PV': value_arrays = [pv_map, rms_map]
     else: value_arrays = [rms_map, pv_map]
+    if convert_to_nm:
+        value_arrays = [stat_map * 1e3 for stat_map in value_arrays]
     return value_arrays
 
-def add_cell_labels(ax, ax_fntsz, value_array):
+def add_cell_labels(ax, ax_fntsz, value_array, font_color_switch_frac=0.75):
     for j in cc.cell_order_array.flatten():
         args = np.argwhere(cc.cell_order_array==j)[0]
         row, col = args[0], args[1]
         color = 'white'
         if np.any(np.isnan(value_array[row, col])): color='black'
-        if value_array[row][col] > (np.nanmax(value_array)-np.nanmin(value_array))*0.75: color='black'
+        if value_array[row][col] > (np.nanmax(value_array)-np.nanmin(value_array))*font_color_switch_frac: color='black'
         cell_label = ax.text(col, row, int(j), color=color, ha='center', va='center', fontsize=ax_fntsz-6)
 
-def plot_cell_profiles(cell_lists, cell_no, dx, vbounds=None, colormap='jet', IF_titles=['FEA Predicted IF', 'Measured IF'],
+def plot_cell_profiles(cell_lists, 
+                       cell_no, 
+                       dx, 
+                       vbounds=None, 
+                       colormap='jet', 
+                       IF_titles=['FEA Predicted IF', 'Measured IF'],
                        profile_labels=['FEA Predicted IF', 'Measured IF'],
-                       profile_titles=['Axial Profile', 'Azimuthal Profile'], global_title='C1S04 Cell Profiles',
-                       figsize=None, ax_fontsize=12, title_fontsize=14, stats=True, date='',
-                       stats_textbox_coords=[0.03, 0.7], N_rows=2, include_diff_profile=False,
-                       linecolors=['gold', 'dodgerblue'], linestyles=['solid', 'solid'], sharedLegend=False):
+                       profile_titles=['Axial Profile', 'Azimuthal Profile'], 
+                       global_title='C1S04 Cell Profiles',
+                       figsize=None, 
+                       ax_fontsize=12, 
+                       title_fontsize=14,
+                       tickSize=None,
+                       tickLabelSize=None,
+                       stats=True,
+                       stats_fontsize=None,
+                       profileLegend_fontsize=None,
+                       date='',
+                       stats_textbox_coords=[0.03, 0.7],
+                       cbarLabelPerPlot=True,
+                       N_rows=2,
+                       profile_y_lims=None,
+                       profile_x_lims=None,
+                       include_diff_profile=False,
+                       linecolors=['gold', 'dodgerblue'], 
+                       linestyles=['solid', 'solid'], 
+                       sharedLegend=False, 
+                       plots_wspace=0.3):
     N_ifs = len(cell_lists)
     if not figsize: figsize = (7*N_ifs, 5*N_ifs)
     # plot the IFs
@@ -552,21 +691,25 @@ def plot_cell_profiles(cell_lists, cell_no, dx, vbounds=None, colormap='jet', IF
                              frame_time=500, repeat_bool=False, dispR=False,
                              cell_nos=True, stats=stats, dispMaxInds=[i+1 for i in range(len(cell_lists))],
                              dispBoxCoords=None, linecolors=['white', 'fuchsia'], details=False, includeCables=False,
-                             merits=None, showImageNumber=True, date=date, stats_textbox_coords=stats_textbox_coords,
-                             show_maxInd_textbox=False, N_rows=N_rows)
+                             merits=None, showImageNumber=True, date=date, staticStatsTextbox=True, 
+                             stats_textbox_coords=stats_textbox_coords, stats_fntsz=stats_fontsize,
+                             show_maxInd_textbox=False, N_rows=N_rows, tickSize=tickSize, tickLabelSize=tickLabelSize, 
+                             cbarLabelPerPlot=cbarLabelPerPlot)
     # add a new row for the profile plots
     axs_list = add_subplot_row(fig, 1, len(cell_lists))
     for i, ax in enumerate(axs_list):
+        ax.tick_params(width=tickSize, labelsize=tickLabelSize)
         if i == 0:
             profile_type = 'axial'
             showLegend = True
         else:
             profile_type = 'azimuthal'
-            showLegend = False
+            showLegend = True
         make_profile_subplot(ax, cell_lists, cell_no, dx, profile_titles[i], profile_labels, linecolors, profile_type,
                              ax_fontsize, title_fontsize, include_diff_profile=include_diff_profile, linestyles=linestyles,
-                             sharedLegend=sharedLegend, showLegend=showLegend)
-    fig.subplots_adjust(top=0.85, hspace=0.5, wspace=0.3)
+                             sharedLegend=sharedLegend, showLegend=showLegend, profileLegend_fontsize=profileLegend_fontsize, 
+                             profile_y_lims=profile_y_lims, profile_x_lims=profile_x_lims)
+    fig.subplots_adjust(top=0.85, hspace=0.5, wspace=plots_wspace)
     return fig
 
 def add_subplot_row(figure, num_rows, num_cols, *subplot_args, **subplot_kwargs):
@@ -593,7 +736,8 @@ def add_subplot_row(figure, num_rows, num_cols, *subplot_args, **subplot_kwargs)
 
 def make_profile_subplot(ax, cell_lists, cell_no, dx, plot_title, profile_labels, linecolors, profile_type,
                          ax_fontsize, title_fontsize, include_diff_profile=False, linestyles=['solid', 'solid'],
-                         sharedLegend=False, showLegend=True):
+                         sharedLegend=False, showLegend=True, profileLegend_fontsize=None, 
+                         profile_y_lims=None, profile_x_lims=None):
     cells = [] # isolate theo meas cell specific to cell number
     for cell_list in cell_lists:
         for cell in cell_list:
@@ -609,6 +753,8 @@ def make_profile_subplot(ax, cell_lists, cell_no, dx, plot_title, profile_labels
             ydatas.append(cell.ifunc[int(cell.maxInd[0][0]), :])
             xlabel = 'Azimuthal Dimension (mm)'
     xdata = np.linspace(-(len(ydatas[0])*dx)/2, (len(ydatas[0])*dx)/2, len(ydatas[0]))
+    print('Profiles min/max: [{:.3f}, {:.3f}]'.format(np.min([np.nanmin(ydatas[i]) for i in range(len(ydatas))]), 
+                                                      np.max([np.nanmax(ydatas[i]) for i in range(len(ydatas))])))
     # plot the profiles
     ax.set_xlabel(xlabel, fontsize=ax_fontsize)
     ax.set_ylabel('Figure (microns)', fontsize=ax_fontsize)
@@ -621,9 +767,13 @@ def make_profile_subplot(ax, cell_lists, cell_no, dx, plot_title, profile_labels
         ax.plot(xdata, ydatas[0]-ydatas[-1], color='firebrick', linewidth=3, label='Difference (FEA - Meas.)')
     # ax.legend(loc='lower center', ncol=2, bbox_to_anchor=(0.5, -0.35))
     if showLegend and sharedLegend:
-        ax.legend(ncol=1, bbox_to_anchor=(1.4, 1.25), loc='upper right')
+        ax.legend(ncol=1, bbox_to_anchor=(1.4, 1.25), loc='upper right', fontsize=profileLegend_fontsize)
     if showLegend and not sharedLegend:
-        ax.legend()
+        ax.legend(fontsize=profileLegend_fontsize)
+    if profile_y_lims is not None:
+        ax.set_ylim(bottom=profile_y_lims[0], top=profile_y_lims[1])
+    if profile_x_lims is not None:
+        ax.set_xlim(bottom=profile_x_lims[0], top=profile_x_lims[1])
 
 def calc_fwhm(cell, dx, dimension):
     """
@@ -699,6 +849,58 @@ def cell_yield_scatter(maxInds, image_shape, dx, vbounds=None, colormap='jet',
         fig.tight_layout()
         fig.subplots_adjust(wspace=0.35)
         return fig
+
+def plot_filter_diff_rms_and_pv(ifs_ls, meas_ifs, win_lens, polyorder, colors=None, linestyles=None, title=None, 
+                                error_rms=8.36, error_pv=87.23, printout=False):
+    """
+    All IFs supplied should already be framed/iso'd, data in um, specify pv and rms error in nm.
+    """
+    rms_ratio_vals = np.zeros(len(ifs_ls))
+    pv_ratio_vals = np.zeros(len(ifs_ls))
+    for i, ifs in enumerate(ifs_ls):
+        diff_ifs = (meas_ifs - ifs) * 1e3
+        rms_vals = np.array([alsis.rms(diff_ifs[j]) for j in range(diff_ifs.shape[0])])
+        pv_vals = np.array([alsis.ptov(diff_ifs[j]) for j in range(diff_ifs.shape[0])])
+        rms_ratio_vals[i] = np.sum(rms_vals < error_rms) / meas_ifs.shape[0]
+        pv_ratio_vals[i] = np.sum(pv_vals < error_pv) / meas_ifs.shape[0]
+        if printout:
+            print('Percent of n = {}, l = {} difference IFs below {} nm RMS error ({:.2f}%) and {} nm PV error ({:.2f}%)'\
+                .format(polyorder, win_lens[i], error_rms, rms_ratio_vals[i]*100, error_pv, pv_ratio_vals[i]*100))
+    
+    if not colors:
+        colors = ['goldenrod', 'dodgerblue']
+    if not linestyles:
+        linestyles = ['solid'] * 2
+    if not title:
+        title = r"Ratios of Measured and $n=\;${} Savitsky-Golay Filtered".format(polyorder) + \
+        "\nIF Differences' Maps Less Than Metrology Error"
+    fontsize = 12
+    title_fontsize = 14
+    ytick_vals = np.arange(0.05, 1.05, 0.05)
+    fig, ax = plt.subplots(1, 2)
+    ax[0].set_xlabel(r'$\ell_{\mathrm{w}}$ (pixels)', fontsize=fontsize)
+    ax[0].set_ylabel("Ratio Less Than Metrology RMS Error", fontsize=fontsize)
+    ax[0].set_xticks(win_lens)
+    ax[0].set_xticklabels(win_lens)
+    ax[0].set_yticks(ytick_vals)
+    ax[0].set_yticklabels(ytick_vals.round(2))
+    ax[0].plot(win_lens, rms_ratio_vals, marker='.', linestyle=linestyles[0], color=colors[0])
+    ax[0].grid(axis='y')
+#     ax[0].axhline(1., color='black', linestyle='dashed')
+    
+    ax[1].set_xlabel(r'$\ell_{\mathrm{w}}$ (pixels)', fontsize=fontsize)
+    ax[1].set_ylabel("Ratio Less Than Metrology PV Error", fontsize=fontsize)
+    ax[1].set_xticks(win_lens)
+    ax[1].set_xticklabels(win_lens)
+    ax[1].set_yticks(ytick_vals)
+    ax[1].set_yticklabels(ytick_vals.round(2))
+    ax[1].plot(win_lens, pv_ratio_vals, marker='.', linestyle=linestyles[1], color=colors[1])
+    ax[1].grid(axis='y')
+#     ax[1].axhline(1., color='black', linestyle='dashed')
+        
+    fig.suptitle(title, fontsize=title_fontsize)
+    fig.tight_layout()
+    return fig
 
 ##############################################################################
 ############################### STITCHING FUNCTIONS ##########################

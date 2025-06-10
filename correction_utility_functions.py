@@ -35,12 +35,13 @@ def rms(d):
     """Return the RMS of an image"""
     return sqrt(nanmean((d-nanmean(d))**2))
 
-def convertToAxialSlopes(img,dx):
+def convertToAxialSlopes(img,dx, axis=0):
     """
     Data should be in mm. You need to multiply your
     data by 1e-3 if it's in microns.
     """
-    return gradient(img,dx)[0]*3600*180/pi
+    #return gradient(img,dx)[0]*3600*180/pi
+    return gradient(img,dx, axis=axis)*3600*180/pi
 
 def stripWithShade(dist,shade):
     """

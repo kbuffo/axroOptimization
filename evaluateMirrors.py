@@ -5,7 +5,10 @@ import utilities.imaging.man as man
 import axroOptimization.solver as slv
 import axroOptimization.conicsolve as conic
 import axroOptimization.correction_utility_functions as cuf
-import axroHFDFCpy.construct_connections as cc
+try:
+    import axroHFDFCpy.construct_connections as cc
+except:
+    import construct_connections as cc
 import time
 
 import pdb
@@ -13,9 +16,10 @@ import pdb
 def printer():
     print('Hello evaluate mirrors!')
 
-def correctXrayTestMirror(d,ifs,shade=None,dx=None,azweight=.015,smax=5.,\
-                          bounds=None,regrid_figure_change = False,avg_slope_remove = True,\
-                          matlab_opt = False):
+def correctXrayTestMirror(d, ifs, shade=None, dx=None, azweight=.015, smax=5.,\
+                          bounds=None, regrid_figure_change=False, avg_slope_remove=True,\
+                          matlab_opt=False, correctionShape=None, v0=None, slp_ifs=[None,None], 
+                          meritFunc='nyquistMeritFunction', nyquistFreq=0.1):
     """
     Get distortion on same grid as IFs and run correction.
     Rebin result onto original distortion grid and apply.
@@ -32,9 +36,10 @@ def correctXrayTestMirror(d,ifs,shade=None,dx=None,azweight=.015,smax=5.,\
         shade = np.ones(np.shape(d2))
 
     #Run correction
-    volt = slv.correctDistortion(d2,ifs,shade,dx=dx,azweight=azweight,
-                                smax=smax,bounds=bounds,avg_slope_remove = avg_slope_remove,
-                                matlab_opt = matlab_opt)
+    volt = slv.correctDistortion(d2, ifs, shade, dx=dx, azweight=azweight,
+                                smax=smax,bounds=bounds,avg_slope_remove=avg_slope_remove,
+                                matlab_opt=matlab_opt, correctionShape=correctionShape, v0=v0, 
+                                slp_ifs=slp_ifs, meritFunc=meritFunc, nyquistFreq=nyquistFreq)
     # Compute the correction on the same scale as the original
     # data. This correction will need to be added to the original
     # data to yield the final corrected figure.
@@ -76,6 +81,7 @@ def computeMeritFunctions(d,dx,x0=np.linspace(-1.,1.,10001),\
 
     #Make sure over 95% of flux falls in detector
     integral = np.sum(resa)*dx2
+    # print('integral is: {:.5}'.format(integral))
 
     if integral < .95:
         print('Possible sampling problem. Integral: {:.5f}'.format(np.sum(resa)*dx2))
@@ -138,7 +144,9 @@ def correctHFDFC3(d,ifs,shade=None,dx=None,azweight=.015,smax=5.,\
     return cor3,volt
 
 def correct_distortions(dist_maps, ifs, dx, shademask=None, smax=1.0,
-                        computeInitialPerformances=True, timeit=True):
+                        computeInitialPerformances=True, azweight=.015, timeit=True, correctionShademask=None, 
+                        shd_dist_maps=None, v0=None, slp_ifs=[None,None], 
+                        meritFuncs=['RMS_directMeritFunction'], nyquistFreq=0.05):
     """
     Compute the optimal figure/slope change for a given input distortion(s) and calculate
     the inital and final performances of the X-ray mirror along with voltages needed for correction.
@@ -154,6 +162,9 @@ def correct_distortions(dist_maps, ifs, dx, shademask=None, smax=1.0,
         max scaled value relative to what the voltages the IFs were taken at.
         i.e., theoretical IFs were taken at 1 V -> smax = 10.0
                 measured IFs were taken at 10 V -> smax = 1.0
+    correctionShademask (optional): A secondary shademask you can provide. This is shademask that will be used
+        during corrections. You can have this shademask be different from shademask to solve the correction over
+        one area, and evaluate the merits over a different area.
     OUTPUTS:
     dist_fig_maps: A 3D array of the shaded distortion maps in figure space
     dist_slp_maps: A 3D array of the shaded distortion maps in slope space
@@ -184,6 +195,11 @@ def correct_distortions(dist_maps, ifs, dx, shademask=None, smax=1.0,
         dist_maps = dist_maps.reshape(1, dist_maps.shape[0], dist_maps.shape[1])
     if ifs.ndim == 2: # check if only a single IF was provided
         ifs = ifs.reshape(1, ifs.shape[0], ifs.shape[1])
+    if shd_dist_maps is None:
+        shd_dist_maps = [None] * dist_maps.shape[0]
+    if correctionShademask is None:
+        correctionShademask = shademask
+    shd_correction_shape = cuf.stripWithShade(dist_maps[0], correctionShademask).shape
     volts_array = np.full((dist_maps.shape[0], ifs.shape[0]), np.nan) # list of lists that show the volts associated with the optimal figure/slope change
     merits = np.full((dist_maps.shape[0], 3, 2), np.nan) # the array of E68 and HPD values
 
@@ -199,20 +215,39 @@ def correct_distortions(dist_maps, ifs, dx, shademask=None, smax=1.0,
         if computeInitialPerformances:
             initial_performance = computeMeritFunctions(dist_shd_map, [dx])
             print('Initial E68: {:.3f} arcsec, HPD: {:.3f} arcsec'.format(initial_performance[0], initial_performance[1]))
+        meritFunc_hpds = []
+        meritFunc_e68s = []
+        meritFunc_figChgMaps = []
+        meritFunc_corrFigMaps = []
+        meritFunc_corrFigShdMaps = []
         # compute the optimal figure change (use the unshaded dist_map in figure space)
-        fig_change_map, volts = correctXrayTestMirror(dist_maps[i], ifs, shademask, [dx], azweight=0,
-                                                        smax=smax, matlab_opt=False)
-        # null the mean figure value in slope change map
-        fig_change_map -= np.nanmean(fig_change_map)
-        # compute the corrected map
-        # print('original dist map shape:', dist_maps[i].shape)
-        # print('fig_change_map shape:', fig_change_map.shape)
-        corrected_fig_map = dist_maps[i] + fig_change_map
-        if shademask is not None:
-            corrected_fig_shd_map = cuf.stripWithShade(corrected_fig_map, shademask)
-        else:
-            corrected_fig_shd_map = corrected_fig_map
-        final_performance = computeMeritFunctions(corrected_fig_shd_map, [dx])
+        for j in range(len(meritFuncs)):
+            fig_change_map, volts = correctXrayTestMirror(dist_maps[i], ifs, shade=correctionShademask, dx=[dx], 
+                                                          azweight=azweight, smax=smax, matlab_opt=False, 
+                                                          correctionShape=shd_correction_shape, v0=v0, slp_ifs=slp_ifs, 
+                                                          meritFunc=meritFuncs[j], nyquistFreq=nyquistFreq)
+            # null the mean figure value in slope change map
+            fig_change_map -= np.nanmean(fig_change_map)
+            # compute the corrected map
+            corrected_fig_map = dist_maps[i] + fig_change_map
+            if shademask is not None:
+                corrected_fig_shd_map = cuf.stripWithShade(corrected_fig_map, shademask)
+            else:
+                corrected_fig_shd_map = corrected_fig_map
+            final_performance = computeMeritFunctions(corrected_fig_shd_map, [dx])
+            #print('{}, E68 {:.3f} arcsec, HPD: {:.3f} arcsec'.format(meritFuncs[j], final_performance[0], final_performance[1]))
+            meritFunc_hpds.append(final_performance[1])
+            meritFunc_e68s.append(final_performance[0])
+            meritFunc_figChgMaps.append(fig_change_map)
+            meritFunc_corrFigMaps.append(corrected_fig_map)
+            meritFunc_corrFigShdMaps.append(corrected_fig_shd_map)
+        
+        arg = np.argmin(meritFunc_hpds)
+        final_performance = [meritFunc_e68s[arg], meritFunc_hpds[arg]]
+        fig_change_map = meritFunc_figChgMaps[arg]
+        corrected_fig_map = meritFunc_corrFigMaps[arg]
+        corrected_fig_shd_map = meritFunc_corrFigShdMaps[arg]
+        print('Best merit function: {}'.format(meritFuncs[arg]))
         print('Final E68: {:.3f} arcsec, HPD: {:.3f} arcsec'.format(final_performance[0], final_performance[1]))
 
         # strip the shade from figure maps and add them to lists:
@@ -324,6 +359,7 @@ def applyVoltsArray_to_IFstack(ifs, volts_array, dx=None, shademask=None, conver
         if convertToAxialSlopes:
             change_map = cuf.convertToAxialSlopes(change_map*1e-3, dx)
     return change_map
+
 
 #def correctForCTF(d,ifs,shade=None,dx=None,azweight=.015,smax=1.0,\
 #                          bounds=None,avg_slope_remove = True):
